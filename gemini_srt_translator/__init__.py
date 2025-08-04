@@ -64,6 +64,13 @@ thoughts_log: bool = None
 quiet: bool = None
 resume: bool = None
 
+if not skip_upgrade:
+    try:
+        upgrade_package("gemini-srt-translator", use_colors=use_colors)
+        raise Exception("Upgrade completed.")
+    except Exception:
+        pass
+
 
 def getmodels():
     """
@@ -245,13 +252,6 @@ def translate():
         "resume": resume,
     }
 
-    if not skip_upgrade:
-        try:
-            upgrade_package("gemini-srt-translator", use_colors=use_colors)
-            raise Exception("Upgrade completed.")
-        except Exception:
-            pass
-
     if quiet:
         set_quiet_mode(quiet)
 
@@ -329,6 +329,9 @@ def transcribe():
     # (Optional) Path to save the transcription output
     gst.output_file = "transcription.srt"
 
+    # (Optional) Resume transcription if progress is found
+    gst.resume = True
+
     gst.transcribe()
     ```
 
@@ -339,6 +342,7 @@ def transcribe():
 
     params = {
         "gemini_api_key": gemini_api_key,
+        "gemini_api_key2": gemini_api_key2,
         "video_file": video_file,
         "audio_file": audio_file,
         "model_name": model_name,
@@ -354,6 +358,7 @@ def transcribe():
         "top_k": top_k,
         "use_colors": use_colors,
         "thoughts_log": thoughts_log,
+        "resume": resume,
     }
 
     if params["isolate_voice"] is None:

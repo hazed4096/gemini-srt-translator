@@ -33,7 +33,7 @@ def get_translate_instruction(
     # --- Section 1: Persona and Primary Goal ---
     prompt_parts.append(
         f"# INSTRUCTION: Translate Subtitles to {language}\n\n"
-        "You are an expert AI linguist specializing in subtitle translation. Your goal is to translate the `text` field of each JSON object into "
+        "You are an expert AI linguist specializing in subtitle translation. Your goal is to translate the `text` field of each item into "
         f"**{language}**."
     )
 
@@ -51,7 +51,7 @@ def get_translate_instruction(
 ]
 ```"""
     prompt_parts.append(
-        f"## {section_number}. Data Structure\nYou will receive and must return a JSON array of objects with this exact structure:\n{json_structure}"
+        f"## {section_number}. Data Structure\nYou will receive and must return a list of items with this exact structure:\n{json_structure}"
     )
 
     # --- Section 3: Core Translation Rules ---
@@ -60,11 +60,12 @@ def get_translate_instruction(
 ## {section_number}. Core Translation Rules
 - **Translate Text Only**: Only translate the value of the `text` field.
 - **Preserve Formatting**: Keep all existing formatting, including HTML tags (`<i>`, `<b>`) and line breaks (`\\n`).
-- **Handle Empty Text**: If a `text` field is empty or contains only whitespace, return it unchanged.
+- **Handle Empty Text**: If a `text` field is empty or contains only whitespace, keep it unchanged.
 - **Maintain Integrity**:
-  - **Do NOT** alter the `index` value or any other fields.
-  - **Do NOT** add, remove, or reorder any JSON objects.
-  - **Do NOT** merge text between different objects.
+  - Number of items in the output must match the input.
+  - **Do NOT** alter any fields other than `text`.
+  - **Do NOT** add, remove, or reorder any items on the list.
+  - **Do NOT** merge text between different items. Original and translation must match.
 """.format(
         section_number=section_number, language=language
     )
