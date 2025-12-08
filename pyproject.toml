@@ -10,11 +10,11 @@ readme = "README.md"
 license = "MIT"
 authors = [{ name = "Matheus Castro" }]
 dependencies = [
-  "google-genai==1.28.0",
-  "srt==3.5.3",
-  "json-repair==0.48.0",
-  "packaging==25.0",
-  "pydub==0.25.1",
+  "google-genai>=1.39.1",
+  "srt>=3.5.3",
+  "json-repair>=0.51.0",
+  "packaging>=25.0",
+  "pydub>=0.25.1",
   "audioop-lts==0.2.1; python_version>='3.13'",
 ]
 classifiers = [
