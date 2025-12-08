@@ -202,15 +202,15 @@ class GeminiSRTTranslator:
 
     def _get_transcribe_config(self):
         """Get the configuration for the transcription model."""
-        thinking_compatible = False
-        if "2.5" in self.model_name:
-            thinking_compatible = True
-            if "pro" in self.model_name and self.thinking_budget < 128:
-                warning(
-                    "2.5 Pro model requires a minimum thinking budget of 128. Setting to 128.",
-                    ignore_quiet=True,
-                )
-                self.thinking_budget = 128
+        thinking_compatible = True
+        if "pro" in self.model_name and self.thinking_budget < 128:
+            warning(
+                "Pro models require a minimum thinking budget of 128. Setting to 128.",
+                ignore_quiet=True,
+            )
+            self.thinking_budget = 128
+        if "2.0" in self.model_name or "gemini" not in self.model_name:
+            thinking_compatible = False
         return types.GenerateContentConfig(
             response_mime_type="application/json",
             response_schema=get_transcribe_response_schema(),
