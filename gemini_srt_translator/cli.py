@@ -108,6 +108,8 @@ def cmd_translate(args) -> None:
         gst.top_k = args.top_k
     if args.thinking_budget:
         gst.thinking_budget = args.thinking_budget
+    if args.thinking_level:
+        gst.thinking_level = args.thinking_level
 
     # Set boolean flags
     if args.no_voice_isolation:
@@ -290,7 +292,8 @@ Examples:
     translate_parser.add_argument("--temperature", type=float, help="Temperature (0.0-2.0)")
     translate_parser.add_argument("--top-p", type=float, help="Top P (0.0-1.0)")
     translate_parser.add_argument("--top-k", type=int, help="Top K (>=0)")
-    translate_parser.add_argument("--thinking-budget", type=int, help="Thinking budget (0-24576)")
+    translate_parser.add_argument("--thinking-budget", type=int, help="Thinking budget (0-32768)")
+    translate_parser.add_argument("--thinking-level", type=str, help="Thinking level (minimal, low, medium, high)")
     translate_parser.add_argument("--no-streaming", action="store_true", default=None, help="Disable streaming")
     translate_parser.add_argument("--no-thinking", action="store_true", default=None, help="Disable thinking mode")
     translate_parser.add_argument("--skip-upgrade", action="store_true", default=None, help="Skip upgrade check")
@@ -334,7 +337,8 @@ Examples:
     transcribe_parser.add_argument("-m", "--model", help="Gemini model to use")
     transcribe_parser.add_argument("-d", "--description", help="Description for transcription context")
     transcribe_parser.add_argument("--audio-chunk-size", type=int, help="Audio chunk size for processing in seconds")
-    transcribe_parser.add_argument("--thinking-budget", type=int, help="Thinking budget (0-24576)")
+    transcribe_parser.add_argument("--thinking-budget", type=int, help="Thinking budget (0-32768)")
+    transcribe_parser.add_argument("--thinking-level", type=str, help="Thinking level (minimal, low, medium, high)")
     transcribe_parser.add_argument("--temperature", type=float, help="Temperature (0.0-2.0)")
     transcribe_parser.add_argument("--top-p", type=float, help="Top P (0.0-1.0)")
     transcribe_parser.add_argument("--top-k", type=int, help="Top K (>=0)")

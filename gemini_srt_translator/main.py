@@ -87,7 +87,8 @@ class GeminiSRTTranslator:
         batch_size: int = 300,
         streaming: bool = True,
         thinking: bool = True,
-        thinking_budget: int = 2048,
+        thinking_budget: int = None,
+        thinking_level: str = None,
         temperature: float = None,
         top_p: float = None,
         top_k: int = None,
@@ -138,7 +139,8 @@ class GeminiSRTTranslator:
         self.batch_size = batch_size
         self.streaming = streaming
         self.thinking = thinking
-        self.thinking_budget = thinking_budget if thinking else 0
+        self.thinking_budget = thinking_budget
+        self.thinking_level = thinking_level
         self.temperature = temperature
         self.top_p = top_p
         self.top_k = top_k
@@ -161,20 +163,38 @@ class GeminiSRTTranslator:
         self.ffmpeg_installed = check_ffmpeg_installation()
         self.consecutive_error_count = 0
         self.max_consecutive_errors = 5
+        self.thought_signature = None
 
         set_color_mode(use_colors)
 
     def _get_translate_config(self):
         """Get the configuration for the translation model."""
-        thinking_compatible = False
-        if "2.5" in self.model_name:
-            thinking_compatible = True
-            if "pro" in self.model_name and self.thinking_budget < 128:
-                warning(
-                    "2.5 Pro model requires a minimum thinking budget of 128. Setting to 128.",
-                    ignore_quiet=True,
-                )
-                self.thinking_budget = 128
+        thinking_compatible = True
+        if "2.0" in self.model_name or "gemini" not in self.model_name:
+            thinking_compatible = False
+        elif "2.5" in self.model_name:
+            self.thinking_level = None
+            if "pro" in self.model_name:
+                if self.thinking == False:
+                    warning("You cannot disable thinking for Gemini 2.5 Pro. Setting thinking budget to 128.", ignore_quiet=True)
+                    self.thinking_budget = 128
+                if self.thinking_budget is not None and self.thinking_budget < 128:
+                    warning(
+                        "Gemini 2.5 Pro requires a minimum thinking budget of 128. Setting to 128.",
+                        ignore_quiet=True,
+                    )
+                    self.thinking_budget = 128
+        elif "3" in self.model_name:
+            self.thinking_budget = None
+            if "pro" in self.model_name and self.thinking_level is not None and ("medium" in self.thinking_level or "minimal" in self.thinking_level):
+                warning("You cannot set thinking level to medium or minimal for Gemini 3.0 Pro. Setting thinking level to low.", ignore_quiet=True)
+                self.thinking_level = "low"
+            if self.thinking == False:
+                warning("You cannot disable thinking for Gemini 3.0 models. Setting thinking level to lowest possible.", ignore_quiet=True)
+                if "pro" in self.model_name:
+                    self.thinking_level = "low"
+                else:
+                    self.thinking_level = "minimal"
 
         return types.GenerateContentConfig(
             response_mime_type="application/json",
@@ -194,6 +214,7 @@ class GeminiSRTTranslator:
                 types.ThinkingConfig(
                     include_thoughts=self.thinking,
                     thinking_budget=self.thinking_budget,
+                    thinking_level=self.thinking_level,
                 )
                 if thinking_compatible
                 else None
@@ -203,14 +224,32 @@ class GeminiSRTTranslator:
     def _get_transcribe_config(self):
         """Get the configuration for the transcription model."""
         thinking_compatible = True
-        if "pro" in self.model_name and self.thinking_budget < 128:
-            warning(
-                "Pro models require a minimum thinking budget of 128. Setting to 128.",
-                ignore_quiet=True,
-            )
-            self.thinking_budget = 128
         if "2.0" in self.model_name or "gemini" not in self.model_name:
             thinking_compatible = False
+        elif "2.5" in self.model_name:
+            self.thinking_level = None
+            if "pro" in self.model_name:
+                if self.thinking == False:
+                    warning("You cannot disable thinking for Gemini 2.5 Pro. Setting thinking budget to 128.", ignore_quiet=True)
+                    self.thinking_budget = 128
+                if self.thinking_budget is not None and self.thinking_budget < 128:
+                    warning(
+                        "Gemini 2.5 Pro requires a minimum thinking budget of 128. Setting to 128.",
+                        ignore_quiet=True,
+                    )
+                    self.thinking_budget = 128
+        elif "3" in self.model_name:
+            self.thinking_budget = None
+            if "pro" in self.model_name and self.thinking_level is not None and ("medium" in self.thinking_level or "minimal" in self.thinking_level):
+                warning("You cannot set thinking level to medium or minimal for Gemini 3.0 Pro. Setting thinking level to low.", ignore_quiet=True)
+                self.thinking_level = "low"
+            if self.thinking == False:
+                warning("You cannot disable thinking for Gemini 3.0 models. Setting thinking level to lowest possible.", ignore_quiet=True)
+                if "pro" in self.model_name:
+                    self.thinking_level = "low"
+                else:
+                    self.thinking_level = "minimal"
+                    
         return types.GenerateContentConfig(
             response_mime_type="application/json",
             response_schema=get_transcribe_response_schema(),
@@ -224,6 +263,7 @@ class GeminiSRTTranslator:
                 types.ThinkingConfig(
                     include_thoughts=self.thinking,
                     thinking_budget=self.thinking_budget,
+                    thinking_level=self.thinking_level,
                 )
                 if thinking_compatible
                 else None
@@ -422,9 +462,21 @@ class GeminiSRTTranslator:
             error("Please provide a subtitle or video file.", ignore_quiet=True)
             exit(1)
 
-        if self.thinking_budget < 0 or self.thinking_budget > 24576:
-            error("Thinking budget must be between 0 and 24576. 0 disables thinking.", ignore_quiet=True)
-            exit(1)
+        if self.thinking_budget is not None:
+            if "gemini" in self.model_name:
+                if "3" in self.model_name or "2.0" in self.model_name:
+                    pass
+                elif "pro" not in self.model_name and (self.thinking_budget < 0 or self.thinking_budget > 24576):
+                    error("Thinking budget must be between 0 and 24576. 0 disables thinking.", ignore_quiet=True)
+                    exit(1)
+                elif "pro" in self.model_name and (self.thinking_budget < 128 or self.thinking_budget > 32768):
+                    error("Thinking budget must be between 128 and 32768.", ignore_quiet=True)
+                    exit(1)
+
+        if self.thinking_level is not None and "gemini-3" in self.model_name:
+            if self.thinking_level != "minimal" and self.thinking_level != "low" and self.thinking_level != "medium" and self.thinking_level != "high":
+                error("Thinking level must be 'minimal', 'low', 'medium', or 'high'.", ignore_quiet=True)
+                exit(1)
 
         if self.temperature is not None and (self.temperature < 0 or self.temperature > 2):
             error("Temperature must be between 0.0 and 2.0.", ignore_quiet=True)
@@ -890,6 +942,8 @@ class GeminiSRTTranslator:
                     info_with_progress("Sending last batch again...", isSending=True)
                     continue
                 for part in response.candidates[0].content.parts:
+                    if part.thought_signature:
+                        self.thought_signature = part.thought_signature
                     if not part.text:
                         continue
                     elif part.thought:
@@ -916,6 +970,8 @@ class GeminiSRTTranslator:
                         break
                     if chunk.candidates[0].content.parts:
                         for part in chunk.candidates[0].content.parts:
+                            if part.thought_signature:
+                                self.thought_signature = part.thought_signature
                             if not part.text:
                                 continue
                             elif part.thought:
@@ -964,7 +1020,7 @@ class GeminiSRTTranslator:
             )
             signal.raise_signal(signal.SIGINT)
         parts = []
-        parts.append(types.Part(thought=True, text=thoughts_text)) if thoughts_text else None
+        parts.append(types.Part(thought_signature=self.thought_signature)) if self.thought_signature else parts.append(types.Part(thought=True, text=thoughts_text)) if thoughts_text else None
         parts.append(types.Part(text=response_text))
         previous_content = [
             types.Content(role="user", parts=[types.Part(text=json.dumps(batch, ensure_ascii=False))]),
@@ -1079,11 +1135,39 @@ class GeminiSRTTranslator:
             error("Please provide a valid Gemini API key for transcription.", ignore_quiet=True)
             exit(1)
 
-        if "2.5" not in self.model_name:
+        if "gemini" not in self.model_name or ("2.5" not in self.model_name and "3" not in self.model_name):
             error(
-                f"Model {self.model_name} is not available for transcription. Please use a Gemini 2.5 model.",
+                f"Model {self.model_name} is not available for transcription. Please use a Gemini 2.5 or 3.0 model.",
                 ignore_quiet=True,
             )
+            exit(1)
+        
+        if self.thinking_budget is not None:
+            if "gemini" in self.model_name:
+                if "3" in self.model_name or "2.0" in self.model_name:
+                    pass
+                elif "pro" not in self.model_name and (self.thinking_budget < 0 or self.thinking_budget > 24576):
+                    error("Thinking budget must be between 0 and 24576. 0 disables thinking.", ignore_quiet=True)
+                    exit(1)
+                elif "pro" in self.model_name and (self.thinking_budget < 128 or self.thinking_budget > 32768):
+                    error("Thinking budget must be between 128 and 32768.", ignore_quiet=True)
+                    exit(1)
+        
+        if self.thinking_level is not None and "gemini-3" in self.model_name:
+            if self.thinking_level != "minimal" and self.thinking_level != "low" and self.thinking_level != "medium" and self.thinking_level != "high":
+                error("Thinking level must be 'minimal', 'low', 'medium', or 'high'.", ignore_quiet=True)
+                exit(1)
+
+        if self.temperature is not None and (self.temperature < 0 or self.temperature > 2):
+            error("Temperature must be between 0.0 and 2.0.", ignore_quiet=True)
+            exit(1)
+
+        if self.top_p is not None and (self.top_p < 0 or self.top_p > 1):
+            error("Top P must be between 0.0 and 1.0.", ignore_quiet=True)
+            exit(1)
+
+        if self.top_k is not None and self.top_k < 0:
+            error("Top K must be a non-negative integer.", ignore_quiet=True)
             exit(1)
 
         current_length, transcribed_subtitle_objects = self._check_saved_transcribe_progress()

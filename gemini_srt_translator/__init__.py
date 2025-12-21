@@ -53,6 +53,7 @@ batch_size: int = None
 streaming: bool = None
 thinking: bool = None
 thinking_budget: int = None
+thinking_level: Literal["minimal", "low", "medium", "high"] = None
 temperature: float = None
 top_p: float = None
 top_k: int = None
@@ -242,6 +243,7 @@ def translate():
         "streaming": streaming,
         "thinking": thinking,
         "thinking_budget": thinking_budget,
+        "thinking_level": thinking_level,
         "temperature": temperature,
         "top_p": top_p,
         "top_k": top_k,
@@ -353,6 +355,7 @@ def transcribe():
         "streaming": streaming,
         "thinking": thinking,
         "thinking_budget": thinking_budget,
+        "thinking_level": thinking_level,
         "temperature": temperature,
         "top_p": top_p,
         "top_k": top_k,
