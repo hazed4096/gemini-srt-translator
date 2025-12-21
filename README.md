@@ -17,6 +17,7 @@
 ---
 
 - 🔤 **SRT Translation**: Translate `.srt` subtitle files to a wide range of languages supported by Google Gemini AI.
+- 🎙️ **Transcription**: Transcribe audio or video files directly into SRT subtitles using Gemini's audio capabilities.
 - ⏱️ **Timing & Format**: Ensures that the translated subtitles maintain the exact timestamps and basic SRT formatting of the original file.
 - 💾 **Quick Resume**: Easily resume interrupted translations from where you left off.
 - 🧠 **Advanced AI**: Leverages thinking and reasoning capabilities for more contextually accurate translations (available on Gemini 2.5 models).
@@ -89,7 +90,7 @@ You can provide your API key in several ways:
 - **Windows (PowerShell):**
   ```powershell
   $env:GEMINI_API_KEY="your_api_key_here"
-  $env:GEMINI_API_KEY2="your_second_api_key_here"  # Optional for additional quota
+  $env:GEMINI_API_KEY2="your_second_api_key_here"
   ```
 
 2. **Command Line Argument**: Use the `-k` or `--api-key` flag
@@ -157,13 +158,46 @@ gst translate \
   -k YOUR_API_KEY \
   -k2 YOUR_SECOND_API_KEY \
   -o output_french.srt \
-  --model gemini-2.5-pro \
+  --model gemini-2.5-flash \
   --batch-size 150 \
   --temperature 0.7 \
   --description "Medical TV series, use medical terminology" \
   --progress-log \
   --thoughts-log \
   --extract-audio \
+```
+
+#### Transcribing Audio/Video
+
+```bash
+# Transcribe a video file to SRT
+gst transcribe -v video.mp4 -o transcription.srt
+
+# Transcribe an audio file
+gst transcribe -a audio.mp3 -o transcription.srt
+
+# Transcribe with custom settings
+gst transcribe \
+  -v video.mp4 \
+  -o transcription.srt \
+  --model gemini-2.5-flash \
+  --description "Meeting recording about project X" \
+```
+
+#### Extracting Audio/Subtitles
+
+```bash
+# Extract SRT from video
+gst extract -v video.mp4 --srt
+
+# Extract Audio from video
+gst extract -v video.mp4 --audio
+
+# Extract both with voice isolation (default)
+gst extract -v video.mp4 --srt --audio
+
+# Extract audio without voice isolation
+gst extract -v video.mp4 --audio --no-voice-isolation
 ```
 
 #### CLI Help
@@ -174,6 +208,8 @@ gst --help
 
 # Show specific command help
 gst translate --help
+gst transcribe --help
+gst extract --help
 ```
 
 ### 🐍 Using Python API
@@ -205,6 +241,37 @@ gst.start_line = 20
 gst.translate()
 ```
 
+#### Transcribing Audio/Video
+
+```python
+import gemini_srt_translator as gst
+
+gst.gemini_api_key = "your_api_key"
+gst.video_file = "video.mp4" # Or gst.audio_file = "audio.mp3"
+gst.output_file = "transcription.srt"
+gst.model_name = "gemini-2.5-flash"
+
+gst.transcribe()
+```
+
+#### Extracting from Video
+
+```python
+import gemini_srt_translator as gst
+
+gst.video_file = "video.mp4"
+
+# Extract SRT
+gst.extract("srt")
+
+# Extract Audio (with voice isolation by default)
+gst.extract("audio")
+
+# Extract Audio (without voice isolation)
+gst.isolate_voice = False
+gst.extract("audio")
+```
+
 ---
 
 ## ⚙️ Advanced Configuration
@@ -215,6 +282,8 @@ gst.translate()
 - `video_file`: Path to a video file to extract subtitles and/or audio for context (requires [FFmpeg](https://ffmpeg.org/)).
 - `audio_file`: Path to an audio file to use as context for translation (requires [FFmpeg](https://ffmpeg.org/)).
 - `extract_audio`: Whether to extract and use audio context from the video file (default: False).
+- `isolate_voice`: Whether to isolate voice from audio (default: True).
+- `audio_chunk_size`: Audio chunk size in seconds for processing (default: 600).
 - `output_file`: Name of the translated file.
 - `start_line`: Starting line for translation.
 - `description`: Description of the translation job.
@@ -236,9 +305,11 @@ gst.translate()
 - `streaming`: Enable streamed responses (default: True).
   - Set to `False` for bad internet connections or when using slower models.
 - `thinking`: Enable thinking capability for potentially more accurate translations (default: True).
+  - Only available for Gemini 2.5 and 3 models.
+- `thinking_budget`: Token budget for the thinking process (range: 0-32768, 0 also disables thinking).
   - Only available for Gemini 2.5 models.
-- `thinking_budget`: Token budget for the thinking process (default: 2048, range: 0-24576, 0 also disables thinking).
-  - Only available for Gemini 2.5 Flash (for now).
+- `thinking_level`: Controls the depth of thinking process (options: minimal, low, medium, high).
+  - Only available for Gemini 3 models.
 
 #### 💡 Full example:
 
@@ -260,6 +331,7 @@ gst.batch_size = 150
 gst.streaming = True
 gst.thinking = True
 gst.thinking_budget = 4096
+gst.thinking_level = "high"
 gst.temperature = 0.7
 gst.top_p = 0.95
 gst.top_k = 20
