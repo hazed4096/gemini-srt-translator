@@ -184,6 +184,22 @@ gst transcribe \
   --description "Meeting recording about project X" \
 ```
 
+#### Extracting Audio/Subtitles
+
+```bash
+# Extract SRT from video
+gst extract -v video.mp4 --srt
+
+# Extract Audio from video
+gst extract -v video.mp4 --audio
+
+# Extract both with voice isolation (default)
+gst extract -v video.mp4 --srt --audio
+
+# Extract audio without voice isolation
+gst extract -v video.mp4 --audio --no-voice-isolation
+```
+
 #### CLI Help
 
 ```bash
@@ -193,6 +209,7 @@ gst --help
 # Show specific command help
 gst translate --help
 gst transcribe --help
+gst extract --help
 ```
 
 ### 🐍 Using Python API
@@ -235,6 +252,24 @@ gst.output_file = "transcription.srt"
 gst.model_name = "gemini-2.5-flash"
 
 gst.transcribe()
+```
+
+#### Extracting from Video
+
+```python
+import gemini_srt_translator as gst
+
+gst.video_file = "video.mp4"
+
+# Extract SRT
+gst.extract("srt")
+
+# Extract Audio (with voice isolation by default)
+gst.extract("audio")
+
+# Extract Audio (without voice isolation)
+gst.isolate_voice = False
+gst.extract("audio")
 ```
 
 ---
