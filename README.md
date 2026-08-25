@@ -469,13 +469,14 @@ The engine handles all deterministic subtitle parsing, audio extraction, timesta
 After installing the package via `pip install gemini-srt-translator`, you can install the Subtitle Translator skill with a single command:
 
 ```bash
-# Install to current project (.gemini/skills/subtitle-translator/SKILL.md)
+# Install to current project (.agents/skills/subtitle-translator/SKILL.md)
 gst skill install
 
-# Install globally for all projects in your user home directory:
+# Install globally for all projects in your user home directory (~/.agents/skills/...):
 gst skill install --global
 
-# Target specific platforms (antigravity, claude, cursor, agent, or all):
+# Target specific platforms (agents, antigravity, claude, codex, or all):
+gst skill install --target antigravity
 gst skill install --target claude
 gst skill install --target all
 
@@ -511,25 +512,32 @@ gst agent translate reset subtitle.srt
 
 If you are building custom AI workflows, Python scripts, or integrating with alternative LLMs (OpenAI, Claude, Ollama, DeepSeek, Whisper, etc.), you can drive the subtitle processing pipeline directly via `SubtitleSession` and `TranscriptionSession`.
 
-The session engine handles all subtitle parsing, line counting, batching, sliding context window, timestamp math, JSON repair, progress tracking, and atomic file saving.
+The session engine handles all subtitle parsing, line counting, batching, sliding context window, timestamp math, audio context slicing, JSON repair, progress tracking, and atomic file saving.
 
 ---
 
 #### A. Subtitle Translation (`SubtitleSession`)
 
-##### 1. Initialization Parameters
+##### 1. Full Parameter Reference
 
 ```python
 from gemini_srt_translator import SubtitleSession
 
 session = SubtitleSession(
-    input_file="movie.srt",          # Path to .srt, .ass, or video file (.mp4, .mkv)
+    input_file="movie.srt",          # Path to .srt, .ass, or video file (.mp4, .mkv, .avi, etc.)
     target_language="French",        # Target language string (e.g. "French", "Brazilian Portuguese")
-    output_file="movie_fr.srt",      # (Optional) Custom output path (defaults to <name>_translated.srt/.ass)
-    batch_size=100,                  # (Optional) Subtitle lines per batch (default: 100)
-    resume_context_size=20,          # (Optional) Previous translated lines included for context (default: 20)
-    description="Context notes...",  # (Optional) Background context notes for character tone/series
-    resume=True,                     # (Optional) Auto-resume from existing .progress file (default: True)
+    output_file=None,                # Custom output path (default: <input>_translated.srt/.ass)
+    video_file=None,                 # Path to video file if separate from input_file
+    audio_file=None,                 # Path to external audio file for audio context
+    batch_size=100,                  # Subtitle lines per batch (default: 100)
+    start_line=None,                 # Explicit 1-based line number to start/resume from
+    resume_context_size=20,          # Previous translated lines included in context (default: 20, 0 to disable)
+    description=None,                # Background context notes (character tone, synopsis) injected into prompt
+    audio_chunk_size=300,            # Maximum audio context slice duration in seconds (default: 300)
+    extract_audio=False,             # When input is a video, extract audio track for audio-context translation
+    isolate_voice=True,              # Isolate speech vocals from video audio using Demucs (default: True)
+    resume=True,                     # Auto-resume from existing .progress file (default: True)
+    thinking=False,                  # Include reasoning protocol instructions in system prompt
 )
 ```
 
@@ -558,6 +566,8 @@ batch_payload = session.get_next_batch()
 #         {"index": "-1", "text": "Previous scene dialogue line..."},
 #         ...
 #     ],
+#     "audio_bytes": b'...',                   # (Optional) MP3 bytes for multimodal audio context
+#     "audio_chunk_path": "/tmp/...chunk.mp3", # (Optional) Temp audio file path on disk
 #     "is_complete": False
 # }
 ```
@@ -608,18 +618,21 @@ print(f"Translation complete! Saved to: {session.output_file}")
 
 #### B. Audio & Video Transcription (`TranscriptionSession`)
 
-##### 1. Initialization Parameters
+##### 1. Full Parameter Reference
 
 ```python
 from gemini_srt_translator import TranscriptionSession
 
 trans_session = TranscriptionSession(
-    audio_file="audio.mp3",          # Path to audio (.mp3, .wav, .m4a) or video file (.mp4, .mkv)
-    output_file="transcript.srt",    # (Optional) Custom output subtitle path (.srt or .ass)
-    audio_chunk_size=600,            # (Optional) Slice duration in seconds (default: 600s / 10 min)
-    isolate_voice=False,             # (Optional) Use Demucs voice isolation if available
-    description="Context notes...",  # (Optional) Notes for transcription context
-    resume=True,                     # (Optional) Auto-resume from existing .progress file
+    audio_file="audio.mp3",          # Path to audio (.mp3, .wav, .m4a) or video file (.mp4, .mkv, etc.)
+    output_file=None,                # Custom output subtitle path (defaults to <name>.srt or .ass)
+    video_file=None,                 # Path to video file if separate from audio_file
+    audio_chunk_size=600,            # Slice duration in seconds per chunk (default: 600s / 10 min)
+    isolate_voice=True,              # Isolate vocals when extracting from video (default: True)
+    start_time=0,                    # Explicit start timestamp in seconds (default: 0)
+    description=None,                # Context notes for transcription (topic, speaker names)
+    thinking=False,                  # Include reasoning protocol instructions in system prompt
+    resume=True,                     # Auto-resume from existing .progress file (default: True)
 )
 ```
 

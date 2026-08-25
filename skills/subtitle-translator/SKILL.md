@@ -5,7 +5,15 @@ description: Translate subtitle files (SRT, ASS) and video/media with embedded s
 
 # Subtitle Translator Skill
 
-This skill allows the agent to act as the translation engine while leveraging the mature subtitle processing pipeline of **Gemini SRT Translator** (subtitle parsing, line counting, timestamp slicing, sliding context window, timestamp preservation, JSON repair, progress tracking, and atomic file saving).
+## 🎯 Role & Agent Protocol (CRITICAL)
+
+When this skill is invoked:
+
+1. **YOU ARE THE TRANSLATOR:** You (the AI assistant) perform the translation directly in your context window using your own linguistic intelligence.
+2. **NO API KEY REQUIRED:** Do **NOT** ask the user for an API key or external credentials. The `gst agent translate` protocol runs completely locally and does not require an API key.
+3. **DO NOT RUN EXTERNAL TRANSLATION SCRIPTS:** Do **NOT** look for or execute external Python scripts. Use **ONLY** the `gst agent translate` CLI commands below.
+
+---
 
 ## When to Use
 
@@ -17,25 +25,34 @@ This skill allows the agent to act as the translation engine while leveraging th
 
 ## Subtitle Translation Protocol
 
-### 1. Start a Translation Session
+### Step 1: Start a Translation Session
+
+Run the start command to initialize the session and receive the first batch of subtitle lines:
 
 ```bash
 gst agent translate start <INPUT_FILE> -l "<TARGET_LANGUAGE>" [--batch-size N] [--description "<OPTIONAL_CONTEXT>"]
 ```
 
+The CLI outputs a JSON response with `next_batch` containing:
+
+- `batch`: Array of `[{"index": "0", "text": "Original text"}, ...]` to translate.
+- `context`: Previous translated lines for character tone, gender agreement, and continuity.
+
 > **Optimal Batch Size Guidance (`-b` / `--batch-size` is optional, defaults to 100):**
 > As an agent, select the batch size you find most optimal for your model capabilities and the file length:
 >
 > - **Recommended Default (80–120 lines):** Optimal balance between narrative context, translation accuracy, and fast validation.
-> - **High-Capacity Models (Claude 3.7 / GPT-4o / Gemini Pro & Flash):** Feel free to use **100–150 lines** to translate full scenes in fewer turns.
+> - **High-Capacity Models:** Feel free to use **100–150 lines** to translate full scenes in fewer turns.
 > - **Short Files / Anime Episodes (< 300 lines):** 60–80 lines provides 3–4 quick, responsive turns.
 > - **Constrained Output / Local Models:** Use **40–60 lines** to guarantee the full JSON array fits comfortably within the model's output generation limits.
 
-### 2. Commit Translated Batch
+### Step 2: Translate In-Context & Commit Translated Batch
+
+Translate each item in `batch` into the target language, preserving the exact item count and indices, then commit:
 
 ```bash
 gst agent translate commit <INPUT_FILE> --data '<TRANSLATED_JSON>'
-# or from file
+# or save to a file and commit:
 gst agent translate commit <INPUT_FILE> --data-file batch_1_translated.json
 ```
 
@@ -48,12 +65,17 @@ gst agent translate commit <INPUT_FILE> --data-file batch_1_translated.json
 ]
 ```
 
-### 3. Status, Next & Reset
+### Step 3: Repeat Until Complete
+
+Each successful `commit` automatically saves progress and returns the `next_batch`.
+Repeat Step 2 until the response returns `"status": "completed"` or `"is_complete": true`.
+
+### Helper Commands
 
 ```bash
-gst agent translate status <INPUT_FILE>
-gst agent translate next <INPUT_FILE> -l "<TARGET_LANGUAGE>"
-gst agent translate reset <INPUT_FILE>
+gst agent translate status <INPUT_FILE>   # Check progress status
+gst agent translate next <INPUT_FILE> -l "<TARGET_LANGUAGE>" # Re-fetch current pending batch
+gst agent translate reset <INPUT_FILE>    # Reset translation progress
 ```
 
 ---
@@ -62,21 +84,5 @@ gst agent translate reset <INPUT_FILE>
 
 1. **Translation Item Parity:** The output JSON array must contain the exact same number of items with identical indices (`index`).
 2. **Formatting Preservation:** Preserve all newlines (`\n`), italic tags (`<i>...</i>`), and ASS styling tags (`{\an8}`, `{\pos(...)}`, etc.).
-3. **Punctuation & Tone:** Maintain dialogue flow, character voice, and natural target language phrasing without altering timing/structural markers.
+3. **Punctuation & Tone:** Maintain dialogue flow, character voice, and natural target language phrasing without altering structural markers.
 
----
-
-## Python Programmatic API
-
-```python
-from gemini_srt_translator import SubtitleSession
-
-session = SubtitleSession(input_file="input.srt", target_language="Spanish", batch_size=100)
-while not session.is_complete():
-    batch = session.get_next_batch()
-    if not batch:
-        break
-    # Translate batch["batch"] with your agent / LLM
-    # translated = ...
-    session.commit_batch(translated)
-```

@@ -366,7 +366,7 @@ def cmd_skill(args) -> None:
         print(get_skill_path())
         return
     elif action == "install":
-        target = getattr(args, "target", "antigravity") or "antigravity"
+        target = getattr(args, "target", "agents") or "agents"
         is_global = bool(getattr(args, "global_install", False))
         custom_dir = getattr(args, "dir", None)
         try:
@@ -594,8 +594,8 @@ Examples:
     skill_install.add_argument(
         "-t",
         "--target",
-        default="antigravity",
-        help="Target platform: antigravity (default), claude, cursor, agent, all",
+        default="agents",
+        help="Target platform: agents (default, .agents/skills), antigravity, claude, codex, all",
     )
     skill_install.add_argument(
         "-g",

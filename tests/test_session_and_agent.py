@@ -247,7 +247,16 @@ class TestSkillManager(unittest.TestCase):
         self.assertIn("subtitle-translator", content)
         self.assertIn("gst agent translate", content)
 
-    def test_install_skill_local(self):
+    def test_install_skill_default(self):
+        from gemini_srt_translator.skill import install_skill
+
+        installed = install_skill(is_global=False, cwd=self.temp_dir.name)
+        self.assertEqual(len(installed), 1)
+        expected_file = os.path.join(self.temp_dir.name, ".agents", "skills", "subtitle-translator", "SKILL.md")
+        self.assertTrue(os.path.exists(expected_file))
+        self.assertEqual(installed[0], expected_file)
+
+    def test_install_skill_antigravity(self):
         from gemini_srt_translator.skill import install_skill
 
         installed = install_skill(target="antigravity", is_global=False, cwd=self.temp_dir.name)
