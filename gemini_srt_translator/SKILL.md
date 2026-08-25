@@ -12,6 +12,9 @@ When this skill is invoked:
 1. **YOU ARE THE TRANSLATOR:** You (the AI assistant) perform the translation directly in your context window using your own linguistic intelligence.
 2. **NO API KEY REQUIRED:** Do **NOT** ask the user for an API key or external credentials. The `gst agent translate` protocol runs completely locally and does not require an API key.
 3. **DO NOT RUN EXTERNAL TRANSLATION SCRIPTS:** Do **NOT** look for or execute external Python scripts. Use **ONLY** the `gst agent translate` CLI commands below.
+4. **VIRTUAL ENVIRONMENT EXECUTION:** `gst` may be installed in a project virtual environment (`.venv` or `venv`) rather than globally. If `gst` is not recognized:
+   - Use the virtual environment binary: `.venv/bin/gst` (Linux/macOS) or `.venv\Scripts\gst.exe` (Windows)
+   - Or use environment package runners: `uv run gst ...` / `poetry run gst ...`
 
 ---
 
