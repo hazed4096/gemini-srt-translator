@@ -88,12 +88,20 @@ def upgrade_package(package_name, use_colors=True):
     installed_version = get_installed_version(package_name)
     latest_version = get_latest_pypi_version(package_name)
 
-    set_color_mode(use_colors)
-    stop_event = threading.Event()
-    error_event = threading.Event()
-    progress_thread = threading.Thread(target=display_progress_bar, args=(stop_event, error_event, package_name))
+    if not installed_version or not latest_version:
+        return
 
-    if installed_version < latest_version:
+    try:
+        is_upgrade_available = version.parse(installed_version) < version.parse(latest_version)
+    except version.InvalidVersion:
+        return
+
+    if is_upgrade_available:
+        set_color_mode(use_colors)
+        stop_event = threading.Event()
+        error_event = threading.Event()
+        progress_thread = threading.Thread(target=display_progress_bar, args=(stop_event, error_event, package_name))
+
         info(f"There is a new version of {package_name} available: {latest_version}.")
         answer = input_prompt(
             f"Do you want to upgrade {package_name} from version {installed_version} to {latest_version}? (y/n): "
