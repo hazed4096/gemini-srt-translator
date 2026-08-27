@@ -76,7 +76,7 @@ class GeminiSRTTranslator:
         extract_audio: bool = False,
         isolate_voice: bool = True,
         start_line: int = None,
-        resume_context_size: int = 50,
+        context_size: int = 50,
         description: str = None,
         model_name: str = "gemini-3.7-flash",
         batch_size: int = 1000,
@@ -87,7 +87,6 @@ class GeminiSRTTranslator:
         service_tier: Literal["standard", "flex", "priority"] = None,
         token_stats: bool = False,
         token_report: str = None,
-        preserve_context: bool = True,
         temperature: float = None,
         top_p: float = None,
         top_k: int = None,
@@ -151,7 +150,7 @@ class GeminiSRTTranslator:
         self.extract_audio = extract_audio
         self.isolate_voice = isolate_voice
         self.start_line = start_line
-        self.resume_context_size = max(0, int(resume_context_size or 0))
+        self.context_size = max(0, int(context_size or 0))
         self.description = description
         self.model_name = model_name
         self.batch_size = batch_size
@@ -162,7 +161,6 @@ class GeminiSRTTranslator:
         self.service_tier = service_tier
         self.token_stats = token_stats
         self.token_report = token_report
-        self.preserve_context = preserve_context
         self.temperature = temperature
         self.top_p = top_p
         self.top_k = top_k
@@ -563,7 +561,7 @@ class GeminiSRTTranslator:
             audio_file=self.audio_file,
             batch_size=self.batch_size,
             start_line=self.start_line,
-            resume_context_size=self.resume_context_size,
+            context_size=self.context_size,
             description=self.description,
             audio_chunk_size=self.audio_chunk_size,
             extract_audio=self.extract_audio,
@@ -633,13 +631,28 @@ class GeminiSRTTranslator:
         validated = False
         server_overload_retries = 0
         max_overload_retries = 3
-        previous_message = []
 
         while not self.session.is_complete():
             batch_payload = self.session.get_next_batch(batch_size=self.batch_size)
             if not batch_payload:
                 break
             batch = batch_payload["batch"]
+            original_context = batch_payload.get("original_context", [])
+            translated_context = batch_payload.get("translated_context", [])
+
+            if self.context_size > 0 and original_context and translated_context:
+                previous_message = [
+                    types.Content(
+                        role="user",
+                        parts=[types.Part(text=json.dumps(original_context, ensure_ascii=False))],
+                    ),
+                    types.Content(
+                        role="model",
+                        parts=[types.Part(text=json.dumps(translated_context, ensure_ascii=False))],
+                    ),
+                ]
+            else:
+                previous_message = []
 
             try:
                 while not validated:
@@ -680,7 +693,7 @@ class GeminiSRTTranslator:
                     self.audio_part = None
 
                 start_time = time.time()
-                previous_message = self._process_batch(batch, previous_message, self.session.translated_subtitles)
+                self._process_batch(batch, previous_message, self.session.translated_subtitles)
                 end_time = time.time()
 
                 commit_res = self.session.commit_batch(self.translated_batch)
@@ -958,17 +971,14 @@ class GeminiSRTTranslator:
         batch: list[SubtitleObject],
         previous_message: list[Content],
         translated_subtitle: list[Subtitle],
-    ) -> Content:
+    ) -> None:
         """
         Process a batch of subtitles for translation.
 
         Args:
             batch (list[SubtitleObject]): Batch of subtitles to translate
-            previous_message (Content): Previous message for context
+            previous_message (list[Content]): Previous messages for context
             translated_subtitle (list[Subtitle]): List to store translated subtitles
-
-        Returns:
-            Content: The model's response for context in next batch
         """
         client = self._get_client()
         parts = []
@@ -995,7 +1005,6 @@ class GeminiSRTTranslator:
             done_thinking = False
             retry += 1
             blocked = False
-            thoughts_signature = None
             if not self.streaming:
                 response = client.models.generate_content(
                     model=self.model_name,
@@ -1008,8 +1017,6 @@ class GeminiSRTTranslator:
                 if not response.text:
                     raise ValueError("Gemini has returned an empty response.")
                 for part in response.candidates[0].content.parts:
-                    if part.thought_signature:
-                        thoughts_signature = part.thought_signature
                     if not part.text:
                         continue
                     elif part.thought:
@@ -1057,8 +1064,6 @@ class GeminiSRTTranslator:
                         break
                     if chunk.candidates[0].content.parts:
                         for part in chunk.candidates[0].content.parts:
-                            if part.thought_signature:
-                                thoughts_signature = part.thought_signature
                             if not part.text:
                                 continue
                             elif part.thought:
@@ -1179,20 +1184,6 @@ class GeminiSRTTranslator:
                 "Gemini has blocked the translation for unknown reasons. Try changing your description (if you have one) and/or the batch size and try again."
             )
             signal.raise_signal(signal.SIGINT)
-        parts = []
-        if thoughts_signature:
-            parts.append(types.Part(text=response_text, thought_signature=thoughts_signature))
-        else:
-            parts.append(types.Part(text=response_text))
-        previous_content = [
-            types.Content(
-                role="user",
-                parts=[types.Part(text=json.dumps(batch, ensure_ascii=False))],
-            ),
-            types.Content(role="model", parts=parts),
-        ]
-        batch.clear()
-        return previous_content if self.preserve_context else []
 
     def _process_translated_lines(
         self,

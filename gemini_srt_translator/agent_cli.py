@@ -44,10 +44,8 @@ def cmd_agent_start(args) -> int:
             input_file=args.input_file,
             target_language=args.target_language,
             output_file=args.output_file,
-            video_file=getattr(args, "video_file", None),
-            audio_file=getattr(args, "audio_file", None),
             batch_size=getattr(args, "batch_size", 100),
-            resume_context_size=getattr(args, "context_size", 20),
+            context_size=getattr(args, "context_size", 0),
             description=getattr(args, "description", None),
             resume=getattr(args, "resume", True),
         )
@@ -223,10 +221,10 @@ def add_agent_subparser(subparsers: argparse._SubParsersAction):
         start_p = subparser_container.add_parser("start", help="Start translation session and get the first batch")
         add_common_translation_args(start_p)
         start_p.add_argument("-l", "--target-language", required=True, help="Target translation language")
-        start_p.add_argument("-v", "--video-file", help="Video file for audio/subtitle extraction")
-        start_p.add_argument("-a", "--audio-file", help="Audio file for context")
         start_p.add_argument("-d", "--description", help="Additional context/notes for translation")
-        start_p.add_argument("--context-size", type=int, default=20, help="Number of previous lines for context")
+        start_p.add_argument(
+            "--context-size", type=int, default=0, help="Number of previous lines for context (default: 0)"
+        )
         start_p.add_argument("--no-resume", dest="resume", action="store_false", default=True, help="Don't resume")
 
         # Next

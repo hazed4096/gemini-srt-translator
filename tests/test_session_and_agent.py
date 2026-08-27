@@ -60,7 +60,7 @@ class TestSubtitleSession(unittest.TestCase):
             target_language="French",
             output_file=self.out_path,
             batch_size=2,
-            resume_context_size=2,
+            context_size=2,
         )
 
         # Batch 1
@@ -69,7 +69,8 @@ class TestSubtitleSession(unittest.TestCase):
         self.assertEqual(batch1["batch_number"], 1)
         self.assertEqual(len(batch1["batch"]), 2)
         self.assertEqual(batch1["batch"][0]["text"], "Hello, world!")
-        self.assertEqual(batch1["context"], [])
+        self.assertEqual(batch1["original_context"], [])
+        self.assertEqual(batch1["translated_context"], [])
 
         # Commit Batch 1
         trans1 = [
@@ -87,8 +88,10 @@ class TestSubtitleSession(unittest.TestCase):
         self.assertEqual(batch2["batch_number"], 2)
         self.assertEqual(len(batch2["batch"]), 2)
         self.assertEqual(batch2["batch"][0]["text"], "This is a test subtitle.")
-        self.assertEqual(len(batch2["context"]), 2)
-        self.assertEqual(batch2["context"][0]["text"], "Bonjour le monde !")
+        self.assertEqual(len(batch2["original_context"]), 2)
+        self.assertEqual(batch2["original_context"][0]["text"], "Hello, world!")
+        self.assertEqual(len(batch2["translated_context"]), 2)
+        self.assertEqual(batch2["translated_context"][0]["text"], "Bonjour le monde !")
 
         # Commit Batch 2
         trans2 = json.dumps(
@@ -140,6 +143,13 @@ class TestSubtitleSession(unittest.TestCase):
         )
         self.assertEqual(session2.current_line, 3)
         self.assertEqual(session2.get_status()["completed_lines"], 2)
+
+    def test_agent_cli_defaults_context_size_to_zero(self):
+        from gemini_srt_translator.cli import create_parser
+
+        parser = create_parser()
+        args = parser.parse_args(["agent", "translate", "start", self.srt_path, "-l", "French"])
+        self.assertEqual(args.context_size, 0)
 
 
 class TestTranscriptionSession(unittest.TestCase):

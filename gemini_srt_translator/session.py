@@ -44,7 +44,8 @@ class BatchPayload(TypedDict, total=False):
     progress_percent: float
     system_prompt: str
     batch: List[SubtitleObject]
-    context: List[SubtitleObject]
+    original_context: List[SubtitleObject]
+    translated_context: List[SubtitleObject]
     audio_chunk_path: Optional[str]
     audio_bytes: Optional[bytes]
     is_complete: bool
@@ -85,7 +86,7 @@ class SubtitleSession:
         audio_file: Optional[str] = None,
         batch_size: int = 100,
         start_line: Optional[int] = None,
-        resume_context_size: int = 20,
+        context_size: int = 50,
         description: Optional[str] = None,
         audio_chunk_size: int = 300,
         extract_audio: bool = False,
@@ -98,7 +99,7 @@ class SubtitleSession:
         self.input_file = input_file
         self.audio_file = audio_file
         self.batch_size = max(1, batch_size)
-        self.resume_context_size = max(0, int(resume_context_size or 0))
+        self.context_size = max(0, int(context_size or 0))
         self.description = description
         self.audio_chunk_size = audio_chunk_size
         self.extract_audio = extract_audio
@@ -360,15 +361,22 @@ class SubtitleSession:
             except Exception as e:
                 warning(f"Failed to slice audio chunk: {e}")
 
-        # Context items (preceding translated lines)
-        context_items: List[SubtitleObject] = []
-        if self.resume_context_size > 0 and start_idx > 0:
-            context_start = max(0, start_idx - self.resume_context_size)
+        # Context items (preceding lines: translated and original)
+        translated_context_items: List[SubtitleObject] = []
+        original_context_items: List[SubtitleObject] = []
+        if self.context_size > 0 and start_idx > 0:
+            context_start = max(0, start_idx - self.context_size)
             for c_idx in range(context_start, start_idx):
-                context_items.append(
+                translated_context_items.append(
                     {
                         "index": str(c_idx),
                         "text": self.translated_subtitles[c_idx].content,
+                    }
+                )
+                original_context_items.append(
+                    {
+                        "index": str(c_idx),
+                        "text": self.original_subtitles[c_idx].content,
                     }
                 )
 
@@ -392,7 +400,8 @@ class SubtitleSession:
             "progress_percent": round((start_idx / self.total_lines) * 100.0, 2),
             "system_prompt": system_prompt,
             "batch": batch_items,
-            "context": context_items,
+            "original_context": original_context_items,
+            "translated_context": translated_context_items,
             "audio_chunk_path": audio_chunk_path,
             "audio_bytes": audio_bytes,
             "is_complete": False,
