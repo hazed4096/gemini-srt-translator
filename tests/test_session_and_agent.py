@@ -144,12 +144,176 @@ class TestSubtitleSession(unittest.TestCase):
         self.assertEqual(session2.current_line, 3)
         self.assertEqual(session2.get_status()["completed_lines"], 2)
 
+    def test_progress_file_created_on_init(self):
+        progress_path = os.path.join(self.temp_dir.name, "test.progress")
+        session = SubtitleSession(
+            input_file=self.srt_path,
+            target_language="Portuguese (Brazil)",
+            output_file=self.out_path,
+            batch_size=2,
+            description="Test Series",
+        )
+        self.assertTrue(os.path.exists(progress_path))
+        with open(progress_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        self.assertEqual(data["line"], 1)
+        self.assertEqual(data["target_language"], "Portuguese (Brazil)")
+        self.assertEqual(data["batch_size"], 2)
+        self.assertEqual(data["description"], "Test Series")
+
+    def test_metadata_restoration_across_sessions(self):
+        # Initialize session with custom parameters
+        session1 = SubtitleSession(
+            input_file=self.srt_path,
+            target_language="Portuguese (Brazil)",
+            output_file=self.out_path,
+            batch_size=2,
+            context_size=1,
+            description="Test Notes",
+        )
+        # Commit batch 1
+        trans1 = [
+            {"index": "0", "text": "Ola mundo"},
+            {"index": "1", "text": "Como vai voce"},
+        ]
+        res1 = session1.commit_batch(trans1)
+        self.assertTrue(res1["success"])
+
+        # Simulate separate CLI call for commit / next / status without passing -l, -b
+        session2 = SubtitleSession(
+            input_file=self.srt_path,
+            resume=True,
+        )
+        self.assertEqual(session2.current_line, 3)
+        self.assertEqual(session2.target_language, "Portuguese (Brazil)")
+        self.assertEqual(session2.batch_size, 2)
+        self.assertEqual(session2.context_size, 1)
+        self.assertEqual(session2.description, "Test Notes")
+
+        # Verify strict validation uses restored batch_size=2
+        # Passing 1 item fails
+        res_fail = session2.commit_batch([{"index": "2", "text": "So um item"}])
+        self.assertFalse(res_fail["success"])
+        self.assertIn("expected 2 items", res_fail["error"])
+
+        # Passing 2 items succeeds
+        res_pass = session2.commit_batch(
+            [
+                {"index": "2", "text": "Isto e um teste"},
+                {"index": "3", "text": "Adeus"},
+            ]
+        )
+        self.assertTrue(res_pass["success"])
+        self.assertTrue(session2.is_complete())
+        progress_path = os.path.join(self.temp_dir.name, "test.progress")
+        self.assertFalse(os.path.exists(progress_path))
+
+    def test_no_resume_cleans_progress_file_and_resets(self):
+        # Create initial session and advance
+        session1 = SubtitleSession(
+            input_file=self.srt_path,
+            target_language="Portuguese (Brazil)",
+            output_file=self.out_path,
+            batch_size=2,
+        )
+        session1.commit_batch(
+            [
+                {"index": "0", "text": "Ola"},
+                {"index": "1", "text": "Mundo"},
+            ]
+        )
+        progress_path = os.path.join(self.temp_dir.name, "test.progress")
+        self.assertTrue(os.path.exists(progress_path))
+
+        # Start new session with resume=False
+        session2 = SubtitleSession(
+            input_file=self.srt_path,
+            target_language="Spanish",
+            output_file=self.out_path,
+            batch_size=3,
+            resume=False,
+        )
+        self.assertEqual(session2.current_line, 1)
+        self.assertEqual(session2.target_language, "Spanish")
+        self.assertEqual(session2.batch_size, 3)
+        with open(progress_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        self.assertEqual(data["line"], 1)
+        self.assertEqual(data["target_language"], "Spanish")
+        self.assertEqual(data["batch_size"], 3)
+
     def test_agent_cli_defaults_context_size_to_zero(self):
         from gemini_srt_translator.cli import create_parser
 
         parser = create_parser()
         args = parser.parse_args(["agent", "start", self.srt_path, "-l", "French"])
         self.assertEqual(args.context_size, 0)
+
+    def test_agent_cli_command_workflow_persists_settings(self):
+        from gemini_srt_translator.cli import create_parser
+
+        parser = create_parser()
+
+        # Step 1: gst agent start with custom language and batch size 2
+        start_args = parser.parse_args(["agent", "start", self.srt_path, "-l", "Portuguese (Brazil)", "-b", "2"])
+        code = cmd_agent_start(start_args)
+        self.assertEqual(code, 0)
+
+        # Verify progress file exists immediately on disk
+        progress_path = os.path.join(self.temp_dir.name, "test.progress")
+        self.assertTrue(os.path.exists(progress_path))
+
+        # Step 2: gst agent commit with --data-file without re-passing -l or -b
+        batch_file = os.path.join(self.temp_dir.name, "step2_batch.json")
+        with open(batch_file, "w", encoding="utf-8") as f:
+            json.dump([
+                {"index": "0", "text": "Ola mundo"},
+                {"index": "1", "text": "Como vai voce"},
+            ], f)
+        commit_args = parser.parse_args(["agent", "commit", self.srt_path, "--data-file", batch_file])
+        code = cmd_agent_commit(commit_args)
+        self.assertEqual(code, 0)
+
+        # Step 3: gst agent status without passing -l or -b
+        status_args = parser.parse_args(["agent", "status", self.srt_path])
+        code = cmd_agent_status(status_args)
+        self.assertEqual(code, 0)
+
+    def test_agent_cli_commit_with_data_file(self):
+        from gemini_srt_translator.cli import create_parser
+
+        parser = create_parser()
+        start_args = parser.parse_args(["agent", "start", self.srt_path, "-l", "French", "-b", "2"])
+        self.assertEqual(cmd_agent_start(start_args), 0)
+
+        # Write data to a temp file
+        batch_file = os.path.join(self.temp_dir.name, "batch_1.json")
+        with open(batch_file, "w", encoding="utf-8") as f:
+            json.dump([
+                {"index": "0", "text": "Bonjour"},
+                {"index": "1", "text": "Comment allez-vous"},
+            ], f)
+
+        commit_args = parser.parse_args(["agent", "commit", self.srt_path, "--data-file", batch_file])
+        code = cmd_agent_commit(commit_args)
+        self.assertEqual(code, 0)
+
+    def test_agent_cli_commit_without_data_does_not_hang(self):
+        import time
+        from gemini_srt_translator.cli import create_parser
+
+        parser = create_parser()
+        start_args = parser.parse_args(["agent", "start", self.srt_path, "-l", "French"])
+        self.assertEqual(cmd_agent_start(start_args), 0)
+
+        # Commit without --data or --data-file: should quickly return error code 1 without hanging
+        t0 = time.time()
+        commit_args = parser.parse_args(["agent", "commit", self.srt_path])
+        code = cmd_agent_commit(commit_args)
+        t1 = time.time()
+
+        self.assertEqual(code, 1)
+        self.assertLess(t1 - t0, 2.0)
 
 
 class TestTranscriptionSession(unittest.TestCase):
