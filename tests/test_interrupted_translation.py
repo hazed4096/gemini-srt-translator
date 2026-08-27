@@ -2,6 +2,7 @@ import json
 import io
 import os
 import stat
+import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -294,6 +295,7 @@ class InterruptedTranslationTests(unittest.TestCase):
                 patch.object(translator, "_get_token_limit", return_value=None),
                 patch.object(translator, "_validate_token_size", return_value=True),
                 patch.object(translator, "_process_batch", side_effect=RuntimeError("api failed")),
+                patch("gemini_srt_translator.main.signal.raise_signal", side_effect=lambda *a: sys.exit(130)),
                 patch("gemini_srt_translator.main.time.sleep", return_value=None),
                 patch("gemini_srt_translator.main.progress_bar", return_value=None),
                 patch("gemini_srt_translator.main.info_with_progress", return_value=None),
@@ -307,7 +309,7 @@ class InterruptedTranslationTests(unittest.TestCase):
             self.assertNotEqual(raised.exception.code, 0)
 
     def test_quiet_overload_abort_reports_last_error(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             root = Path(tmp)
             input_file = root / "sample.en.srt"
             output_file = root / "sample.zh.srt"
@@ -332,6 +334,7 @@ class InterruptedTranslationTests(unittest.TestCase):
                     patch.object(translator, "_get_token_limit", return_value=None),
                     patch.object(translator, "_validate_token_size", return_value=True),
                     patch.object(translator, "_process_batch", side_effect=RuntimeError("503 model overloaded")),
+                    patch("gemini_srt_translator.main.signal.raise_signal", side_effect=lambda *a: sys.exit(130)),
                     patch("gemini_srt_translator.main.time.sleep", return_value=None),
                     redirect_stdout(captured),
                 ):

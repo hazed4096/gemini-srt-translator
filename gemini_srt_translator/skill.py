@@ -111,11 +111,11 @@ The CLI outputs a JSON response with `next_batch` containing:
 
 ### Step 2: Translate In-Context & Commit Translated Batch
 
-Translate each item in `batch` into the target language, preserving the exact item count and indices, then commit:
+1. Translate each item in `batch` into the target language, preserving the exact item count and indices.
+2. Save the translated JSON array to a temporary file (e.g. `batch_1_translated.json`).
+3. Commit the file:
 
 ```bash
-gst agent commit <INPUT_FILE> --data '<TRANSLATED_JSON>'
-# or save to a file and commit:
 gst agent commit <INPUT_FILE> --data-file batch_1_translated.json
 ```
 
@@ -132,6 +132,10 @@ gst agent commit <INPUT_FILE> --data-file batch_1_translated.json
 
 Each successful `commit` automatically saves progress and returns the `next_batch`.
 Repeat Step 2 until the response returns `"status": "completed"` or `"is_complete": true`.
+
+### Step 4: Cleanup Temporary Files
+
+Delete the temporary batch JSON files (e.g. `batch_1_translated.json`) either progressively as each batch is committed or after the entire translation session finishes, keeping the workspace clean.
 
 ### Helper Commands
 

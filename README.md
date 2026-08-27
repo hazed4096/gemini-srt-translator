@@ -497,8 +497,7 @@ For manual agent orchestration or custom LLM scripts (`input_file` can be `.srt`
 gst agent start subtitle.srt -l "French" --batch-size 100 --pretty
 
 # 2. Commit translated batch (returns next batch)
-gst agent commit subtitle.srt --data '[{"index": "0", "text": "Bonjour..."}]'
-# Or pass a file: gst agent commit subtitle.srt --data-file batch.json
+gst agent commit subtitle.srt --data-file batch.json
 
 # 3. Get pending batch, check status, or reset
 gst agent next subtitle.srt -l "French"

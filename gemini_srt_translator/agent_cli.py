@@ -44,7 +44,7 @@ def cmd_agent_start(args) -> int:
             input_file=args.input_file,
             target_language=args.target_language,
             output_file=args.output_file,
-            batch_size=getattr(args, "batch_size", 100),
+            batch_size=getattr(args, "batch_size", None) or 100,
             context_size=getattr(args, "context_size", 0),
             description=getattr(args, "description", None),
             resume=getattr(args, "resume", True),
@@ -70,9 +70,9 @@ def cmd_agent_next(args) -> int:
     try:
         session = SubtitleSession(
             input_file=args.input_file,
-            target_language=getattr(args, "target_language", "English") or "English",
+            target_language=getattr(args, "target_language", None),
             output_file=getattr(args, "output_file", None),
-            batch_size=getattr(args, "batch_size", 100),
+            batch_size=getattr(args, "batch_size", None),
             resume=True,
         )
 
@@ -92,26 +92,31 @@ def cmd_agent_next(args) -> int:
 
 
 def cmd_agent_commit(args) -> int:
-    """Commit a translated batch, save to file, and return the next batch."""
+    """Commit a translated batch from a JSON file, save to subtitle, and return the next batch."""
     try:
-        data = None
-        if getattr(args, "data", None):
-            data = args.data
-        elif getattr(args, "data_file", None):
-            if not os.path.exists(args.data_file):
-                _print_json({"status": "error", "error": f"File not found: {args.data_file}"}, pretty=args.pretty)
-                return 1
-            with open(args.data_file, "r", encoding="utf-8") as f:
-                data = f.read()
-        else:
-            if not sys.stdin.isatty():
-                data = sys.stdin.read()
-
-        if not data:
+        data_file = getattr(args, "data_file", None)
+        if not data_file:
             _print_json(
                 {
                     "status": "error",
-                    "error": "No translation data provided. Use --data, --data-file, or pipe via stdin.",
+                    "error": "Missing translation file. Use '--data-file <path>'.",
+                },
+                pretty=args.pretty,
+            )
+            return 1
+
+        if not os.path.exists(data_file):
+            _print_json({"status": "error", "error": f"File not found: {data_file}"}, pretty=args.pretty)
+            return 1
+
+        with open(data_file, "r", encoding="utf-8") as f:
+            data = f.read()
+
+        if not data or not data.strip():
+            _print_json(
+                {
+                    "status": "error",
+                    "error": f"Translation file is empty: {data_file}",
                 },
                 pretty=args.pretty,
             )
@@ -119,9 +124,9 @@ def cmd_agent_commit(args) -> int:
 
         session = SubtitleSession(
             input_file=args.input_file,
-            target_language=getattr(args, "target_language", "English") or "English",
+            target_language=getattr(args, "target_language", None),
             output_file=getattr(args, "output_file", None),
-            batch_size=getattr(args, "batch_size", 100),
+            batch_size=getattr(args, "batch_size", None),
             resume=True,
         )
 
@@ -213,7 +218,7 @@ def add_agent_subparser(subparsers: argparse._SubParsersAction):
     def add_common_translation_args(parser):
         parser.add_argument("input_file", help="Input subtitle (.srt, .ass) or video file")
         parser.add_argument("-o", "--output-file", help="Custom output file path")
-        parser.add_argument("-b", "--batch-size", type=int, default=100, help="Batch size (number of subtitle lines)")
+        parser.add_argument("-b", "--batch-size", type=int, default=None, help="Batch size (number of subtitle lines)")
         parser.add_argument("--pretty", action="store_true", help="Pretty print JSON output")
 
     def setup_translation_subparsers(subparser_container):
@@ -236,8 +241,7 @@ def add_agent_subparser(subparsers: argparse._SubParsersAction):
         commit_p = subparser_container.add_parser("commit", help="Commit a translated batch")
         add_common_translation_args(commit_p)
         commit_p.add_argument("-l", "--target-language", help="Target translation language")
-        commit_p.add_argument("--data", help="Raw JSON string of translated batch items")
-        commit_p.add_argument("--data-file", "--file", help="Path to JSON file containing translated batch items")
+        commit_p.add_argument("--data-file", "--file", "-f", help="Path to JSON file containing translated batch items")
 
         # Status
         status_p = subparser_container.add_parser("status", help="Get translation status")

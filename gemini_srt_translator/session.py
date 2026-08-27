@@ -80,13 +80,13 @@ class SubtitleSession:
     def __init__(
         self,
         input_file: Optional[str] = None,
-        target_language: str = "English",
+        target_language: Optional[str] = None,
         output_file: Optional[str] = None,
         video_file: Optional[str] = None,
         audio_file: Optional[str] = None,
-        batch_size: int = 100,
+        batch_size: Optional[int] = None,
         start_line: Optional[int] = None,
-        context_size: int = 50,
+        context_size: Optional[int] = None,
         description: Optional[str] = None,
         audio_chunk_size: int = 300,
         extract_audio: bool = False,
@@ -98,8 +98,8 @@ class SubtitleSession:
         self.video_file = video_file
         self.input_file = input_file
         self.audio_file = audio_file
-        self.batch_size = max(1, batch_size)
-        self.context_size = max(0, int(context_size or 0))
+        self.batch_size = max(1, batch_size) if batch_size is not None else None
+        self.context_size = max(0, int(context_size)) if context_size is not None else None
         self.description = description
         self.audio_chunk_size = audio_chunk_size
         self.extract_audio = extract_audio
@@ -146,7 +146,7 @@ class SubtitleSession:
         self.original_subtitles: List[Subtitle] = self._parse_subtitle_file(self.input_file)
         self.total_lines = len(self.original_subtitles)
 
-        # Load or initialize translated subtitles
+        # Load or initialize translated subtitles & session state
         self.translated_subtitles: List[Subtitle] = []
         self.current_line = 1  # 1-indexed
         self.batch_number = 1
@@ -190,16 +190,59 @@ class SubtitleSession:
                 self.audio = None
 
     def _init_translation_state(self, explicit_start_line: Optional[int]):
-        """Initialize translated subtitles and resume pointer."""
-        saved_line = self._read_saved_progress()
+        """Initialize translated subtitles, metadata, and resume pointer."""
+        if self.resume is False:
+            if self.progress_file and os.path.exists(self.progress_file):
+                try:
+                    os.remove(self.progress_file)
+                except Exception:
+                    pass
+            self.current_line = (
+                max(1, min(explicit_start_line, self.total_lines)) if explicit_start_line is not None else 1
+            )
+            if self.target_language is None:
+                self.target_language = "English"
+            if self.batch_size is None:
+                self.batch_size = 100
+            if self.context_size is None:
+                self.context_size = 0
+            self.translated_subtitles = self._copy_subtitles(self.original_subtitles)
+            self.batch_number = 1
+            self._save_progress(self.current_line)
+            return
 
-        if explicit_start_line is not None:
-            self.current_line = max(1, min(explicit_start_line, self.total_lines))
-        elif saved_line is not None and (self.resume is True or self.resume is None):
-            self.current_line = max(1, min(saved_line, self.total_lines))
+        saved_data = self._read_saved_progress()
+        if saved_data:
+            saved_line = saved_data.get("line")
+            if explicit_start_line is not None:
+                self.current_line = max(1, min(explicit_start_line, self.total_lines))
+            elif saved_line is not None:
+                self.current_line = max(1, min(int(saved_line), self.total_lines))
+            else:
+                self.current_line = 1
+
+            if self.target_language is None and "target_language" in saved_data and saved_data["target_language"]:
+                self.target_language = saved_data["target_language"]
+            if self.batch_size is None and "batch_size" in saved_data and saved_data["batch_size"]:
+                self.batch_size = max(1, int(saved_data["batch_size"]))
+            if self.context_size is None and "context_size" in saved_data and saved_data["context_size"] is not None:
+                self.context_size = max(0, int(saved_data["context_size"]))
+            if self.description is None and "description" in saved_data:
+                self.description = saved_data["description"]
+        else:
+            self.current_line = (
+                max(1, min(explicit_start_line, self.total_lines)) if explicit_start_line is not None else 1
+            )
+
+        if self.target_language is None:
+            self.target_language = "English"
+        if self.batch_size is None:
+            self.batch_size = 100
+        if self.context_size is None:
+            self.context_size = 0
 
         # Check existing translated output file
-        if os.path.exists(self.output_file):
+        if self.current_line > 1 and os.path.exists(self.output_file):
             try:
                 existing = self._parse_subtitle_file(self.output_file)
                 if len(existing) == self.total_lines:
@@ -214,19 +257,23 @@ class SubtitleSession:
         # Update batch number estimate
         if self.current_line > 1:
             self.batch_number = ((self.current_line - 1) // self.batch_size) + 1
+        else:
+            self.batch_number = 1
+
+        self._save_progress(self.current_line)
 
     def _copy_subtitles(self, subs: List[Subtitle]) -> List[Subtitle]:
         return [Subtitle(s.index, s.start, s.end, s.content) for s in subs]
 
-    def _read_saved_progress(self) -> Optional[int]:
-        """Read saved line from .progress file."""
+    def _read_saved_progress(self) -> Optional[Dict[str, Any]]:
+        """Read saved progress dictionary from .progress file."""
         if not self.progress_file or not os.path.exists(self.progress_file):
             return None
         try:
             with open(self.progress_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            if data.get("input_file") == self.input_file:
-                return data.get("line")
+            if isinstance(data, dict) and data.get("input_file") == self.input_file:
+                return data
         except Exception:
             pass
         return None
@@ -236,8 +283,20 @@ class SubtitleSession:
         if not self.progress_file:
             return
         try:
-            with open(self.progress_file, "w", encoding="utf-8") as f:
-                json.dump({"line": line, "input_file": self.input_file}, f)
+            data = {
+                "line": line,
+                "input_file": self.input_file,
+                "target_language": self.target_language,
+                "batch_size": self.batch_size,
+                "output_file": self.output_file,
+                "context_size": self.context_size,
+                "description": self.description,
+            }
+            temp_dir = os.path.dirname(os.path.abspath(self.progress_file)) or "."
+            temp_progress = os.path.join(temp_dir, f".tmp_{os.path.basename(self.progress_file)}")
+            with open(temp_progress, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            os.replace(temp_progress, self.progress_file)
         except Exception as e:
             warning(f"Failed to save progress: {e}")
 
@@ -542,7 +601,7 @@ class TranscriptionSession:
         audio_file: Optional[str] = None,
         video_file: Optional[str] = None,
         output_file: Optional[str] = None,
-        audio_chunk_size: int = 600,
+        audio_chunk_size: Optional[int] = None,
         start_time: Optional[int] = None,
         extract_audio: bool = True,
         isolate_voice: bool = False,
@@ -552,7 +611,7 @@ class TranscriptionSession:
     ):
         self.audio_file = audio_file
         self.video_file = video_file
-        self.audio_chunk_size = max(10, int(audio_chunk_size))
+        self.audio_chunk_size = max(10, int(audio_chunk_size)) if audio_chunk_size is not None else None
         self.extract_audio = extract_audio
         self.isolate_voice = isolate_voice
         self.resume = resume
@@ -620,16 +679,16 @@ class TranscriptionSession:
         self.audio = AudioSegment.from_file(self.audio_file)
         self.total_seconds = int(len(self.audio) / 1000)
 
-    def _read_saved_progress(self) -> Optional[int]:
-        """Read saved progress time from .progress file."""
+    def _read_saved_progress(self) -> Optional[Dict[str, Any]]:
+        """Read saved progress dictionary from .progress file."""
         if not self.progress_file or not os.path.exists(self.progress_file):
             return None
         try:
             with open(self.progress_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
             source_file = self.audio_file if self.audio_file else self.video_file
-            if data.get("input_file") == source_file and "time" in data:
-                return int(data["time"])
+            if isinstance(data, dict) and data.get("input_file") == source_file:
+                return data
         except Exception:
             pass
         return None
@@ -640,28 +699,75 @@ class TranscriptionSession:
             return
         try:
             source_file = self.audio_file if self.audio_file else self.video_file
-            with open(self.progress_file, "w", encoding="utf-8") as f:
-                json.dump({"time": time_in_seconds, "input_file": source_file}, f)
+            data = {
+                "time": time_in_seconds,
+                "input_file": source_file,
+                "output_file": self.output_file,
+                "audio_chunk_size": self.audio_chunk_size,
+                "description": self.description,
+            }
+            temp_dir = os.path.dirname(os.path.abspath(self.progress_file)) or "."
+            temp_progress = os.path.join(temp_dir, f".tmp_{os.path.basename(self.progress_file)}")
+            with open(temp_progress, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            os.replace(temp_progress, self.progress_file)
         except Exception as e:
             warning(f"Failed to save progress: {e}")
 
     def _init_transcription_state(self, explicit_start_time: Optional[int]):
-        """Initialize start pointer and load existing subtitles if resuming."""
-        saved_time = self._read_saved_progress()
+        """Initialize start pointer, metadata, and load existing subtitles if resuming."""
+        if self.resume is False:
+            if self.progress_file and os.path.exists(self.progress_file):
+                try:
+                    os.remove(self.progress_file)
+                except Exception:
+                    pass
+            self.current_seconds = (
+                max(0, min(explicit_start_time, self.total_seconds)) if explicit_start_time is not None else 0
+            )
+            if self.audio_chunk_size is None:
+                self.audio_chunk_size = 600
+            self.transcribed_subtitles = []
+            self.chunk_number = 1
+            self._save_progress(self.current_seconds)
+            return
 
-        if explicit_start_time is not None:
-            self.current_seconds = max(0, min(explicit_start_time, self.total_seconds))
-        elif saved_time is not None and (self.resume is True or self.resume is None):
-            self.current_seconds = max(0, min(saved_time, self.total_seconds))
+        saved_data = self._read_saved_progress()
+        if saved_data:
+            saved_time = saved_data.get("time")
+            if explicit_start_time is not None:
+                self.current_seconds = max(0, min(explicit_start_time, self.total_seconds))
+            elif saved_time is not None:
+                self.current_seconds = max(0, min(int(saved_time), self.total_seconds))
+            else:
+                self.current_seconds = 0
+
+            if self.audio_chunk_size is None and "audio_chunk_size" in saved_data and saved_data["audio_chunk_size"]:
+                self.audio_chunk_size = max(10, int(saved_data["audio_chunk_size"]))
+            if self.description is None and "description" in saved_data:
+                self.description = saved_data["description"]
+        else:
+            self.current_seconds = (
+                max(0, min(explicit_start_time, self.total_seconds)) if explicit_start_time is not None else 0
+            )
+
+        if self.audio_chunk_size is None:
+            self.audio_chunk_size = 600
 
         if self.current_seconds > 0 and os.path.exists(self.output_file):
             try:
                 self.transcribed_subtitles = SubtitleSession._parse_subtitle_file(self.output_file)
             except Exception:
                 self.transcribed_subtitles = []
+        else:
+            self.transcribed_subtitles = []
 
         if self.current_seconds > 0:
             self.chunk_number = (self.current_seconds // self.audio_chunk_size) + 1
+        else:
+            self.chunk_number = 1
+
+        self._save_progress(self.current_seconds)
 
     def is_complete(self) -> bool:
         """Check if all audio chunks have been processed."""
