@@ -148,7 +148,7 @@ class TestSubtitleSession(unittest.TestCase):
         from gemini_srt_translator.cli import create_parser
 
         parser = create_parser()
-        args = parser.parse_args(["agent", "translate", "start", self.srt_path, "-l", "French"])
+        args = parser.parse_args(["agent", "start", self.srt_path, "-l", "French"])
         self.assertEqual(args.context_size, 0)
 
 
@@ -255,7 +255,7 @@ class TestSkillManager(unittest.TestCase):
 
         content = get_skill_content()
         self.assertIn("subtitle-translator", content)
-        self.assertIn("gst agent translate", content)
+        self.assertIn("gst agent start", content)
 
     def test_install_skill_default(self):
         from gemini_srt_translator.skill import install_skill

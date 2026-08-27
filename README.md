@@ -486,24 +486,24 @@ Once installed, simply ask your agent in natural language:
 
 > _"Translate movie.srt to Brazilian Portuguese"_
 
-The agent will automatically use the skill to invoke `gst agent translate` and process the file scene-by-scene!
+The agent will automatically use the skill to invoke `gst agent` and process the file scene-by-scene!
 
-### 2. Subtitle Translation Suite (`gst agent translate`)
+### 2. Subtitle Translation Suite (`gst agent`)
 
 For manual agent orchestration or custom LLM scripts (`input_file` can be `.srt`, `.ass`, or video files like `.mp4`, `.mkv`):
 
 ```bash
 # 1. Start session and receive Batch #1 (--pretty formats JSON output for readable inspection)
-gst agent translate start subtitle.srt -l "French" --batch-size 100 --pretty
+gst agent start subtitle.srt -l "French" --batch-size 100 --pretty
 
 # 2. Commit translated batch (returns next batch)
-gst agent translate commit subtitle.srt --data '[{"index": "0", "text": "Bonjour..."}]'
-# Or pass a file: gst agent translate commit subtitle.srt --data-file batch.json
+gst agent commit subtitle.srt --data '[{"index": "0", "text": "Bonjour..."}]'
+# Or pass a file: gst agent commit subtitle.srt --data-file batch.json
 
 # 3. Get pending batch, check status, or reset
-gst agent translate next subtitle.srt -l "French"
-gst agent translate status subtitle.srt --pretty
-gst agent translate reset subtitle.srt
+gst agent next subtitle.srt -l "French"
+gst agent status subtitle.srt --pretty
+gst agent reset subtitle.srt
 ```
 
 #### Agent CLI Options Reference
