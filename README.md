@@ -206,8 +206,8 @@ gst translate -i subtitle.srt -l "Brazilian Portuguese" --interactive
 # Resume translation from a specific line
 gst translate -i subtitle.srt -l French --start-line 20
 
-# Limit saved-progress resume context to 50 previous lines (0 disables it)
-gst translate -i subtitle.srt -l French --resume --resume-context-size 50
+# Limit context to 50 previous subtitle lines (0 disables it)
+gst translate -i subtitle.srt -l French --context-size 50
 
 # Suppress output
 gst translate -i subtitle.srt -l French --quiet
@@ -227,14 +227,14 @@ gst translate \
   --model gemini-3.5-flash \
   --service-tier standard \
   --batch-size 150 \
+  --context-size 50 \
   --temperature 0.7 \
   --description "Medical TV series, use medical terminology" \
   --progress-log \
   --thoughts-log \
   --extract-audio \
   --token-stats \
-  --token-report \
-  --no-context
+  --token-report
 ```
 
 #### Transcribing Audio/Video
@@ -366,7 +366,7 @@ gst.extract("audio")
 - `audio_chunk_size`: Audio chunk size in seconds for processing (default: 600).
 - `output_file`: Name of the translated file.
 - `start_line`: Starting line for translation.
-- `resume_context_size`: Number of previous lines to include as context when resuming (default: 50, 0 disables resume context).
+- `context_size`: Number of previous subtitle lines to include as context (default: 50, 0 disables context).
 - `description`: Description of the translation job.
 - `batch_size`: Batch size (default: 1000).
 - `free_quota`: Signal GST that you are using a free quota (default: True).
@@ -378,7 +378,6 @@ gst.extract("audio")
 - `resume`: Skip prompt and set automatic resume mode.
 - `token_stats`: Show token usage information (default: False).
 - `token_report`: Save token usage and run statistics to a JSON file. If passed via CLI without arguments, it defaults to using the first available input filename with a `_token_report.json` suffix (default: None).
-- `preserve_context`: Preserve context between batches (default: True).
 
 #### 🔬 Model Tuning Parameters
 
@@ -428,10 +427,9 @@ gst.progress_log = True
 gst.thoughts_log = True
 gst.quiet = False
 gst.resume = True
-gst.resume_context_size = 50
+gst.context_size = 50
 gst.token_stats = True
 gst.token_report = "token_report.json"
-gst.preserve_context = True
 gst.service_tier = "standard"
 
 gst.translate()
@@ -488,25 +486,37 @@ Once installed, simply ask your agent in natural language:
 
 > _"Translate movie.srt to Brazilian Portuguese"_
 
-The agent will automatically use the skill to invoke `gst agent translate` and process the file scene-by-scene!
+The agent will automatically use the skill to invoke `gst agent` and process the file scene-by-scene!
 
-### 2. Subtitle Translation Suite (`gst agent translate`)
+### 2. Subtitle Translation Suite (`gst agent`)
 
-For manual agent orchestration or custom LLM scripts:
+For manual agent orchestration or custom LLM scripts (`input_file` can be `.srt`, `.ass`, or video files like `.mp4`, `.mkv`):
 
 ```bash
-# 1. Start session and receive Batch #1
-gst agent translate start subtitle.srt -l "French" --batch-size 100
+# 1. Start session and receive Batch #1 (--pretty formats JSON output for readable inspection)
+gst agent start subtitle.srt -l "French" --batch-size 100 --pretty
 
 # 2. Commit translated batch (returns next batch)
-gst agent translate commit subtitle.srt --data '[{"index": "0", "text": "Bonjour..."}]'
-# Or pass a file: gst agent translate commit subtitle.srt --data-file batch.json
+gst agent commit subtitle.srt --data '[{"index": "0", "text": "Bonjour..."}]'
+# Or pass a file: gst agent commit subtitle.srt --data-file batch.json
 
 # 3. Get pending batch, check status, or reset
-gst agent translate next subtitle.srt -l "French"
-gst agent translate status subtitle.srt
-gst agent translate reset subtitle.srt
+gst agent next subtitle.srt -l "French"
+gst agent status subtitle.srt --pretty
+gst agent reset subtitle.srt
 ```
+
+#### Agent CLI Options Reference
+
+| Flag | Description | Default |
+| --- | --- | --- |
+| `-l, --target-language` | Target language (e.g. `"French"`, `"Spanish"`) | Required on `start` |
+| `-b, --batch-size` | Number of subtitle lines per batch | `100` |
+| `--context-size` | Preceding lines to include in context fields | `0` (agent maintains chat history) |
+| `-o, --output-file` | Custom output subtitle path | `<input>_translated.srt/.ass` |
+| `-d, --description` | Background context notes (e.g. synopsis, character tone) | None |
+| `--pretty` | Pretty-print JSON responses with 2-space indentation | `false` (compact JSON) |
+| `--no-resume` | Start translation from the beginning without loading `.progress` | `false` |
 
 ### 3. Python Programmatic API (`SubtitleSession` & `TranscriptionSession`)
 
@@ -531,7 +541,7 @@ session = SubtitleSession(
     audio_file=None,                 # Path to external audio file for audio context
     batch_size=100,                  # Subtitle lines per batch (default: 100)
     start_line=None,                 # Explicit 1-based line number to start/resume from
-    resume_context_size=20,          # Previous translated lines included in context (default: 20, 0 to disable)
+    context_size=50,                 # Previous translated lines included in context (default: 50, 0 to disable)
     description=None,                # Background context notes (character tone, synopsis) injected into prompt
     audio_chunk_size=300,            # Maximum audio context slice duration in seconds (default: 300)
     extract_audio=False,             # When input is a video, extract audio track for audio-context translation
@@ -562,8 +572,12 @@ batch_payload = session.get_next_batch()
 #         {"index": "1", "text": "How are you today?"},
 #         ...
 #     ],
-#     "context": [
-#         {"index": "-1", "text": "Previous scene dialogue line..."},
+#     "original_context": [
+#         {"index": "-1", "text": "Previous scene original line..."},
+#         ...
+#     ],
+#     "translated_context": [
+#         {"index": "-1", "text": "Previous scene translated line..."},
 #         ...
 #     ],
 #     "audio_bytes": b'...',                   # (Optional) MP3 bytes for multimodal audio context
@@ -602,7 +616,7 @@ while not session.is_complete():
     if not batch:
         break
 
-    # Send batch["batch"] (and optional batch["context"]) to your model
+    # Send batch["batch"] (and optional batch["original_context"] / batch["translated_context"]) to your model
     translated = my_custom_llm(batch["batch"])
 
     # Commit translated items (validates parity and saves atomically to disk)

@@ -145,8 +145,8 @@ def cmd_translate(args) -> None:
         gst.audio_chunk_size = args.audio_chunk_size
     if args.start_line:
         gst.start_line = args.start_line
-    if args.resume_context_size is not None:
-        gst.resume_context_size = args.resume_context_size
+    if getattr(args, "context_size", None) is not None:
+        gst.context_size = args.context_size
     if args.description:
         gst.description = args.description
     if args.batch_size:
@@ -169,8 +169,6 @@ def cmd_translate(args) -> None:
         gst.token_stats = args.token_stats
     if args.token_report is not None:
         gst.token_report = resolve_token_report_path(args)
-    if args.no_context:
-        gst.preserve_context = not args.no_context
 
     # Set boolean flags
     if args.no_voice_isolation:
@@ -439,10 +437,10 @@ Examples:
     translate_parser.add_argument("-a", "--audio-file", help="Audio file for context")
     translate_parser.add_argument("-s", "--start-line", type=int, help="Starting line number")
     translate_parser.add_argument(
-        "--resume-context-size",
+        "--context-size",
         type=int,
         default=None,
-        help="Number of previous lines to include as context when resuming (default: 50, 0 disables)",
+        help="Number of previous subtitle lines to include as context (default: 50, 0 disables)",
     )
     translate_parser.add_argument("-d", "--description", help="Description for translation context")
     translate_parser.add_argument("-m", "--model", help="Gemini model to use")
@@ -467,7 +465,6 @@ Examples:
         default=None,
         help="Write per-run token usage JSON to this path",
     )
-    translate_parser.add_argument("--no-context", action="store_true", default=None, help="No context between batches")
     translate_parser.add_argument("--no-streaming", action="store_true", default=None, help="Disable streaming")
     translate_parser.add_argument("--no-thinking", action="store_true", default=None, help="Disable thinking mode")
     translate_parser.add_argument("--skip-upgrade", action="store_true", default=None, help="Skip upgrade check")

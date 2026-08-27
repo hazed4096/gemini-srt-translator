@@ -53,7 +53,7 @@ audio_chunk_size: int = None
 extract_audio: bool = None
 isolate_voice: bool = None
 start_line: int = None
-resume_context_size: int = None
+context_size: int = 50
 description: str = None
 model_name: str = None
 batch_size: int = None
@@ -64,7 +64,6 @@ thinking_level: Literal["minimal", "low", "medium", "high"] = None
 service_tier: Literal["standard", "flex", "priority"] = None
 token_stats: bool = None
 token_report: str = None
-preserve_context: bool = None
 temperature: float = None
 top_p: float = None
 top_k: int = None
@@ -211,8 +210,8 @@ def translate():
     # (Optional) Line number to start translation from
     gst.start_line = 120
 
-    # (Optional) Number of previous lines to include when resuming (default: 50, 0 disables resume context)
-    gst.resume_context_size = 50
+    # (Optional) Number of previous subtitle lines to include as context (default: 50, 0 disables context)
+    gst.context_size = 50
 
     # (Optional) Additional description of the translation task
     gst.description = "This subtitle is from a TV Series called 'Friends'."
@@ -240,9 +239,6 @@ def translate():
 
     # (Optional) Show token usage information (default: False)
     gst.token_stats = False
-
-    # (Optional) Preserve context between batches (default: True)
-    gst.preserve_context = True
 
     # (Optional) Temperature for the translation model (range: 0.0-2.0)
     gst.temperature = 0.5
@@ -308,7 +304,7 @@ def translate():
         "extract_audio": extract_audio,
         "isolate_voice": isolate_voice,
         "start_line": start_line,
-        "resume_context_size": resume_context_size,
+        "context_size": context_size,
         "description": description,
         "model_name": model_name,
         "batch_size": batch_size,
@@ -319,7 +315,6 @@ def translate():
         "service_tier": service_tier,
         "token_stats": token_stats,
         "token_report": token_report,
-        "preserve_context": preserve_context,
         "temperature": temperature,
         "top_p": top_p,
         "top_k": top_k,

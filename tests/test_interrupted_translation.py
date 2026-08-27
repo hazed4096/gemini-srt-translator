@@ -64,7 +64,7 @@ class InterruptedTranslationTests(unittest.TestCase):
 
             self.assertEqual(raised.exception.code, "output remained intact")
 
-    def test_resume_context_size_limits_initial_resume_context(self):
+    def test_context_size_limits_initial_resume_context(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             root = Path(tmp)
             input_file = root / "sample.en.srt"
@@ -96,14 +96,14 @@ class InterruptedTranslationTests(unittest.TestCase):
                 model_name="gemini-flash-latest",
                 batch_size=100,
                 resume=True,
-                resume_context_size=2,
+                context_size=2,
                 use_colors=False,
             )
 
             def capture_context(batch, previous_message, translated_subtitle):
-                source_context = json.loads(previous_message[0].parts[0].text)
+                original_context = json.loads(previous_message[0].parts[0].text)
                 translated_context = json.loads(previous_message[1].parts[0].text)
-                self.assertEqual([line["index"] for line in source_context], ["2", "3"])
+                self.assertEqual([line["index"] for line in original_context], ["2", "3"])
                 self.assertEqual([line["index"] for line in translated_context], ["2", "3"])
                 raise SystemExit("context captured")
 
@@ -123,6 +123,127 @@ class InterruptedTranslationTests(unittest.TestCase):
                     translator.translate()
 
             self.assertEqual(raised.exception.code, "context captured")
+
+    def test_multi_batch_sends_context_size_preceding_lines(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+            root = Path(tmp)
+            input_file = root / "sample.en.srt"
+            output_file = root / "sample.zh.srt"
+            input_file.write_text(
+                "1\n00:00:01,000 --> 00:00:02,000\nLine one\n\n"
+                "2\n00:00:03,000 --> 00:00:04,000\nLine two\n\n"
+                "3\n00:00:05,000 --> 00:00:06,000\nLine three\n\n"
+                "4\n00:00:07,000 --> 00:00:08,000\nLine four\n",
+                encoding="utf-8",
+            )
+
+            translator = GeminiSRTTranslator(
+                gemini_api_key="test-key",
+                target_language="Simplified Chinese",
+                input_file=str(input_file),
+                output_file=str(output_file),
+                model_name="gemini-flash-latest",
+                batch_size=2,
+                context_size=2,
+                use_colors=False,
+                resume=False,
+            )
+
+            batch_call_count = 0
+
+            def process_batches(batch, previous_message, translated_subtitle):
+                nonlocal batch_call_count
+                batch_call_count += 1
+                if batch_call_count == 1:
+                    self.assertEqual(previous_message, [])
+                    # Simulate batch 1 translation
+                    translator.translated_batch = [
+                        {"index": "0", "text": "第一行"},
+                        {"index": "1", "text": "第二行"},
+                    ]
+                elif batch_call_count == 2:
+                    self.assertEqual(len(previous_message), 2)
+                    original_ctx = json.loads(previous_message[0].parts[0].text)
+                    trans_ctx = json.loads(previous_message[1].parts[0].text)
+                    self.assertEqual([line["index"] for line in original_ctx], ["0", "1"])
+                    self.assertEqual([line["text"] for line in original_ctx], ["Line one", "Line two"])
+                    self.assertEqual([line["index"] for line in trans_ctx], ["0", "1"])
+                    self.assertEqual([line["text"] for line in trans_ctx], ["第一行", "第二行"])
+                    translator.translated_batch = [
+                        {"index": "2", "text": "第三行"},
+                        {"index": "3", "text": "第四行"},
+                    ]
+                return None
+
+            with (
+                patch.object(translator, "getmodels", return_value=["gemini-flash-latest"]),
+                patch.object(translator, "_get_token_limit", return_value=None),
+                patch.object(translator, "_validate_token_size", return_value=True),
+                patch.object(translator, "_process_batch", side_effect=process_batches),
+                patch("gemini_srt_translator.main.progress_bar", return_value=None),
+                patch("gemini_srt_translator.main.info_with_progress", return_value=None),
+                patch("gemini_srt_translator.main.warning_with_progress", return_value=None),
+                patch("gemini_srt_translator.main.error_with_progress", return_value=None),
+                patch("gemini_srt_translator.main.success_with_progress", return_value=None),
+                patch("gemini_srt_translator.main.highlight", return_value=None),
+            ):
+                translator.translate()
+
+            self.assertEqual(batch_call_count, 2)
+            self.assertTrue(translator.session.is_complete())
+
+    def test_context_size_zero_sends_no_context(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+            root = Path(tmp)
+            input_file = root / "sample.en.srt"
+            output_file = root / "sample.zh.srt"
+            input_file.write_text(
+                "1\n00:00:01,000 --> 00:00:02,000\nLine one\n\n"
+                "2\n00:00:03,000 --> 00:00:04,000\nLine two\n\n"
+                "3\n00:00:05,000 --> 00:00:06,000\nLine three\n\n"
+                "4\n00:00:07,000 --> 00:00:08,000\nLine four\n",
+                encoding="utf-8",
+            )
+
+            translator = GeminiSRTTranslator(
+                gemini_api_key="test-key",
+                target_language="Simplified Chinese",
+                input_file=str(input_file),
+                output_file=str(output_file),
+                model_name="gemini-flash-latest",
+                batch_size=2,
+                context_size=0,
+                use_colors=False,
+                resume=False,
+            )
+
+            batch_call_count = 0
+
+            def process_batches(batch, previous_message, translated_subtitle):
+                nonlocal batch_call_count
+                batch_call_count += 1
+                self.assertEqual(previous_message, [])
+                translator.translated_batch = [
+                    {"index": str(int(batch[0]["index"])), "text": "T1"},
+                    {"index": str(int(batch[1]["index"])), "text": "T2"},
+                ]
+                return None
+
+            with (
+                patch.object(translator, "getmodels", return_value=["gemini-flash-latest"]),
+                patch.object(translator, "_get_token_limit", return_value=None),
+                patch.object(translator, "_validate_token_size", return_value=True),
+                patch.object(translator, "_process_batch", side_effect=process_batches),
+                patch("gemini_srt_translator.main.progress_bar", return_value=None),
+                patch("gemini_srt_translator.main.info_with_progress", return_value=None),
+                patch("gemini_srt_translator.main.warning_with_progress", return_value=None),
+                patch("gemini_srt_translator.main.error_with_progress", return_value=None),
+                patch("gemini_srt_translator.main.success_with_progress", return_value=None),
+                patch("gemini_srt_translator.main.highlight", return_value=None),
+            ):
+                translator.translate()
+
+            self.assertEqual(batch_call_count, 2)
 
     @unittest.skipIf(os.name == "nt", "POSIX permission bits are not meaningful on Windows")
     def test_atomic_write_uses_normal_file_permissions_for_new_output(self):

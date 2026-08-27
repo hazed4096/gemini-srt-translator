@@ -10,8 +10,8 @@ description: Translate subtitle files (SRT, ASS) and video/media with embedded s
 When this skill is invoked:
 
 1. **YOU ARE THE TRANSLATOR:** You (the AI assistant) perform the translation directly in your context window using your own linguistic intelligence.
-2. **NO API KEY REQUIRED:** Do **NOT** ask the user for an API key or external credentials. The `gst agent translate` protocol runs completely locally and does not require an API key.
-3. **DO NOT RUN EXTERNAL TRANSLATION SCRIPTS:** Do **NOT** look for or execute external Python scripts. Use **ONLY** the `gst agent translate` CLI commands below.
+2. **NO API KEY REQUIRED:** Do **NOT** ask the user for an API key or external credentials. The `gst agent` protocol runs completely locally and does not require an API key.
+3. **DO NOT RUN EXTERNAL TRANSLATION SCRIPTS:** Do **NOT** look for or execute external Python scripts. Use **ONLY** the `gst agent` CLI commands below.
 4. **VIRTUAL ENVIRONMENT EXECUTION:** `gst` may be installed in a project virtual environment (`.venv` or `venv`) rather than globally. If `gst` is not recognized:
    - Use the virtual environment binary: `.venv/bin/gst` (Linux/macOS) or `.venv\Scripts\gst.exe` (Windows)
    - Or use environment package runners: `uv run gst ...` / `poetry run gst ...`
@@ -33,13 +33,28 @@ When this skill is invoked:
 Run the start command to initialize the session and receive the first batch of subtitle lines:
 
 ```bash
-gst agent translate start <INPUT_FILE> -l "<TARGET_LANGUAGE>" [--batch-size N] [--description "<OPTIONAL_CONTEXT>"]
+gst agent start <INPUT_FILE> -l "<TARGET_LANGUAGE>" [--batch-size N] [--context-size N] [--description "<OPTIONAL_CONTEXT>"] [--pretty]
 ```
+
+`<INPUT_FILE>` can be a subtitle file (`.srt`, `.ass`) or a video file (`.mp4`, `.mkv`, `.avi`, etc. — embedded subtitles will be automatically extracted).
+
+#### CLI Options Reference
+
+| Flag | Description | Default |
+| --- | --- | --- |
+| `-l, --target-language` | Target language name (e.g. `"French"`, `"Spanish"`) | Required |
+| `-b, --batch-size` | Number of subtitle lines per batch | `100` |
+| `--context-size` | Preceding lines to include in context fields | `0` (agent retains chat history) |
+| `-o, --output-file` | Custom output subtitle path | `<input>_translated.srt/.ass` |
+| `-d, --description` | Background context notes (e.g. series name, character tone) | None |
+| `--pretty` | Pretty-print JSON responses with indentation | `false` (compact JSON) |
+| `--no-resume` | Start fresh without resuming previous `.progress` | `false` |
 
 The CLI outputs a JSON response with `next_batch` containing:
 
 - `batch`: Array of `[{"index": "0", "text": "Original text"}, ...]` to translate.
-- `context`: Previous translated lines for character tone, gender agreement, and continuity.
+- `original_context`: Previous original source lines (empty by default unless `--context-size` > 0 is passed).
+- `translated_context`: Previous translated lines for continuity (empty by default unless `--context-size` > 0 is passed).
 
 > **Optimal Batch Size Guidance (`-b` / `--batch-size` is optional, defaults to 100):**
 > As an agent, select the batch size you find most optimal for your model capabilities and the file length:
@@ -54,9 +69,9 @@ The CLI outputs a JSON response with `next_batch` containing:
 Translate each item in `batch` into the target language, preserving the exact item count and indices, then commit:
 
 ```bash
-gst agent translate commit <INPUT_FILE> --data '<TRANSLATED_JSON>'
+gst agent commit <INPUT_FILE> --data '<TRANSLATED_JSON>'
 # or save to a file and commit:
-gst agent translate commit <INPUT_FILE> --data-file batch_1_translated.json
+gst agent commit <INPUT_FILE> --data-file batch_1_translated.json
 ```
 
 **Commit Data Format:**
@@ -76,9 +91,9 @@ Repeat Step 2 until the response returns `"status": "completed"` or `"is_complet
 ### Helper Commands
 
 ```bash
-gst agent translate status <INPUT_FILE>   # Check progress status
-gst agent translate next <INPUT_FILE> -l "<TARGET_LANGUAGE>" # Re-fetch current pending batch
-gst agent translate reset <INPUT_FILE>    # Reset translation progress
+gst agent status <INPUT_FILE> [--pretty]   # Check progress status
+gst agent next <INPUT_FILE> -l "<TARGET_LANGUAGE>" [--pretty] # Re-fetch current pending batch
+gst agent reset <INPUT_FILE> [--pretty]    # Reset translation progress
 ```
 
 ---

@@ -44,10 +44,8 @@ def cmd_agent_start(args) -> int:
             input_file=args.input_file,
             target_language=args.target_language,
             output_file=args.output_file,
-            video_file=getattr(args, "video_file", None),
-            audio_file=getattr(args, "audio_file", None),
             batch_size=getattr(args, "batch_size", 100),
-            resume_context_size=getattr(args, "context_size", 20),
+            context_size=getattr(args, "context_size", 0),
             description=getattr(args, "description", None),
             resume=getattr(args, "resume", True),
         )
@@ -223,10 +221,10 @@ def add_agent_subparser(subparsers: argparse._SubParsersAction):
         start_p = subparser_container.add_parser("start", help="Start translation session and get the first batch")
         add_common_translation_args(start_p)
         start_p.add_argument("-l", "--target-language", required=True, help="Target translation language")
-        start_p.add_argument("-v", "--video-file", help="Video file for audio/subtitle extraction")
-        start_p.add_argument("-a", "--audio-file", help="Audio file for context")
         start_p.add_argument("-d", "--description", help="Additional context/notes for translation")
-        start_p.add_argument("--context-size", type=int, default=20, help="Number of previous lines for context")
+        start_p.add_argument(
+            "--context-size", type=int, default=0, help="Number of previous lines for context (default: 0)"
+        )
         start_p.add_argument("--no-resume", dest="resume", action="store_false", default=True, help="Don't resume")
 
         # Next
@@ -253,51 +251,29 @@ def add_agent_subparser(subparsers: argparse._SubParsersAction):
         reset_p.add_argument("-o", "--output-file", help="Custom output file path")
         reset_p.add_argument("--pretty", action="store_true", help="Pretty print JSON output")
 
-    # 1. Grouped Translate Subparsers: `gst agent translate <start|next|commit|status|reset>`
-    translate_parser = agent_subparsers.add_parser("translate", help="Translate subtitle files step-by-step")
-    translate_subparsers = translate_parser.add_subparsers(dest="translate_command", help="Translation action")
-    setup_translation_subparsers(translate_subparsers)
-
-    # 2. Direct Top-level aliases for translation: `gst agent <start|next|commit|status|reset>`
+    # Direct subcommands: `gst agent <start|next|commit|status|reset>`
     setup_translation_subparsers(agent_subparsers)
 
 
 def handle_agent_command(args) -> int:
     """Route agent subcommands."""
-    if not getattr(args, "agent_command", None):
+    cmd = getattr(args, "agent_command", None)
+    if not cmd:
         print(
-            "Please specify an agent subcommand: translate, start, next, commit, status, reset",
+            "Please specify an agent subcommand: start, next, commit, status, reset",
             file=sys.stderr,
         )
         return 1
 
-    # Grouped translation: gst agent translate <action>
-    if args.agent_command == "translate":
-        subcmd = getattr(args, "translate_command", None)
-        if not subcmd:
-            print("Please specify a translate action: start, next, commit, status, reset", file=sys.stderr)
-            return 1
-        if subcmd == "start":
-            return cmd_agent_start(args)
-        elif subcmd == "next":
-            return cmd_agent_next(args)
-        elif subcmd == "commit":
-            return cmd_agent_commit(args)
-        elif subcmd == "status":
-            return cmd_agent_status(args)
-        elif subcmd == "reset":
-            return cmd_agent_reset(args)
-
-    # Direct top-level translation aliases
-    elif args.agent_command == "start":
+    if cmd == "start":
         return cmd_agent_start(args)
-    elif args.agent_command == "next":
+    elif cmd == "next":
         return cmd_agent_next(args)
-    elif args.agent_command == "commit":
+    elif cmd == "commit":
         return cmd_agent_commit(args)
-    elif args.agent_command == "status":
+    elif cmd == "status":
         return cmd_agent_status(args)
-    elif args.agent_command == "reset":
+    elif cmd == "reset":
         return cmd_agent_reset(args)
 
     return 1
