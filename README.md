@@ -456,11 +456,9 @@ gst.listmodels()
 
 ---
 
-## 🤖 AI Agent Skill & Custom LLM Pipeline
+## 🤖 AI Agent Skill
 
-You can use **Gemini SRT Translator** as an **Agent Skill** (`SKILL.md`) for AI coding agents (**Google Antigravity**, **Claude Code**, **Cursor**, **Cline / Roo-Code**, **OpenAI Codex**) or drive the pipeline step-by-step with any custom LLM without needing a Gemini API key.
-
-The engine handles all deterministic subtitle parsing, audio extraction, timestamp alignment, sliding context window, JSON repair, progress tracking, and atomic file saving.
+You can use **Gemini SRT Translator** as an **Agent Skill** (`SKILL.md`) for AI coding agents (**Google Antigravity**, **Claude Code**, **Cursor**, **Cline / Roo-Code**, **OpenAI Codex**).
 
 ### 1. Install the Skill for AI Agents (`gst skill install`)
 
@@ -517,17 +515,17 @@ gst agent reset subtitle.srt
 | `--pretty` | Pretty-print JSON responses with 2-space indentation | `false` (compact JSON) |
 | `--no-resume` | Start translation from the beginning without loading `.progress` | `false` |
 
-### 3. Python Programmatic API (`SubtitleSession` & `TranscriptionSession`)
+---
 
-If you are building custom AI workflows, Python scripts, or integrating with alternative LLMs (OpenAI, Claude, Ollama, DeepSeek, Whisper, etc.), you can drive the subtitle processing pipeline directly via `SubtitleSession` and `TranscriptionSession`.
+## 🐍 Python Programmatic API (`SubtitleSession` & `TranscriptionSession`)
+
+If you are building custom AI workflows, Python scripts, or integrating with alternative LLMs (OpenAI, Claude, Ollama, DeepSeek, Whisper, etc.), you can drive the subtitle processing pipeline directly via `SubtitleSession` and `TranscriptionSession` without needing a Gemini API key.
 
 The session engine handles all subtitle parsing, line counting, batching, sliding context window, timestamp math, audio context slicing, JSON repair, progress tracking, and atomic file saving.
 
----
+### Subtitle Translation (`SubtitleSession`)
 
-#### A. Subtitle Translation (`SubtitleSession`)
-
-##### 1. Full Parameter Reference
+#### 1. Full Parameter Reference
 
 ```python
 from gemini_srt_translator import SubtitleSession
@@ -550,7 +548,7 @@ session = SubtitleSession(
 )
 ```
 
-##### 2. `session.get_next_batch()` (What you receive)
+#### 2. `session.get_next_batch()` (What you receive)
 
 Returns `None` when completed, or a `dict` payload containing:
 
@@ -585,7 +583,7 @@ batch_payload = session.get_next_batch()
 # }
 ```
 
-##### 3. `session.commit_batch(translated)` (What you send)
+#### 3. `session.commit_batch(translated)` (What you send)
 
 Accepts either a **Python `list[dict]`** or a **raw JSON string** (markdown codeblocks are automatically handled by built-in `json_repair`):
 
@@ -603,7 +601,7 @@ result = session.commit_batch(translated_data)
 # result -> {"success": True, "is_complete": False, "status": {...}}
 ```
 
-##### Complete Translation Loop Example:
+#### Complete Translation Loop Example:
 
 ```python
 from gemini_srt_translator import SubtitleSession
@@ -629,9 +627,9 @@ print(f"Translation complete! Saved to: {session.output_file}")
 
 ---
 
-#### B. Audio & Video Transcription (`TranscriptionSession`)
+### Audio & Video Transcription (`TranscriptionSession`)
 
-##### 1. Full Parameter Reference
+#### 1. Full Parameter Reference
 
 ```python
 from gemini_srt_translator import TranscriptionSession
@@ -649,7 +647,7 @@ trans_session = TranscriptionSession(
 )
 ```
 
-##### 2. `trans_session.get_next_chunk()` (What you receive)
+#### 2. `trans_session.get_next_chunk()` (What you receive)
 
 Returns `None` when completed, or a `dict` payload containing:
 
@@ -671,7 +669,7 @@ chunk_payload = trans_session.get_next_chunk()
 # }
 ```
 
-##### 3. `trans_session.commit_chunk(transcribed)` (What you send)
+#### 3. `trans_session.commit_chunk(transcribed)` (What you send)
 
 Accepts either a **Python `list[dict]`** or a **raw JSON string**. Timestamps are relative to the start of the chunk (`00:00` to `MM:SS` or `HH:MM:SS`); `TranscriptionSession` automatically computes and applies the global timestamp offset across the entire file:
 
@@ -694,7 +692,7 @@ result = trans_session.commit_chunk(transcribed_data)
 # result -> {"success": True, "added_subtitles": 2, "is_complete": False, "status": {...}}
 ```
 
-##### Complete Transcription Loop Example:
+#### Complete Transcription Loop Example:
 
 ```python
 from gemini_srt_translator import TranscriptionSession
