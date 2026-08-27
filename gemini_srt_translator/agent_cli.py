@@ -50,11 +50,23 @@ def cmd_agent_start(args) -> int:
             resume=getattr(args, "resume", True),
         )
 
-        next_batch = session.get_next_batch()
+        next_batch = session.get_next_batch(include_system_prompt=True)
+        if not next_batch:
+            _print_json(
+                {
+                    "status": "completed",
+                    "session": session.get_status(),
+                },
+                pretty=args.pretty,
+            )
+            return 0
+
+        system_prompt = next_batch.pop("system_prompt", None)
         _print_json(
             {
-                "status": "ready" if next_batch else "completed",
+                "status": "ready",
                 "session": session.get_status(),
+                "system_prompt": system_prompt,
                 "next_batch": next_batch,
             },
             pretty=args.pretty,
@@ -76,11 +88,23 @@ def cmd_agent_next(args) -> int:
             resume=True,
         )
 
-        next_batch = session.get_next_batch()
+        next_batch = session.get_next_batch(include_system_prompt=True)
+        if not next_batch:
+            _print_json(
+                {
+                    "status": "completed",
+                    "session": session.get_status(),
+                },
+                pretty=args.pretty,
+            )
+            return 0
+
+        system_prompt = next_batch.pop("system_prompt", None)
         _print_json(
             {
-                "status": "ok" if next_batch else "completed",
+                "status": "ok",
                 "session": session.get_status(),
+                "system_prompt": system_prompt,
                 "next_batch": next_batch,
             },
             pretty=args.pretty,
@@ -142,16 +166,36 @@ def cmd_agent_commit(args) -> int:
             )
             return 1
 
-        next_batch = session.get_next_batch()
-        _print_json(
-            {
-                "status": "completed" if session.is_complete() else "committed",
-                "commit_result": commit_result,
-                "session": session.get_status(),
-                "next_batch": next_batch,
-            },
-            pretty=args.pretty,
-        )
+        status_dict = session.get_status()
+        if session.is_complete():
+            _print_json(
+                {
+                    "status": "completed",
+                    "progress": {
+                        "completed_lines": status_dict["completed_lines"],
+                        "total_lines": status_dict["total_lines"],
+                        "percent": status_dict["progress_percent"],
+                    },
+                    "output_file": session.output_file,
+                },
+                pretty=args.pretty,
+            )
+        else:
+            next_batch = session.get_next_batch(include_system_prompt=False)
+            _print_json(
+                {
+                    "status": "committed",
+                    "progress": {
+                        "batch": status_dict["batch_number"],
+                        "total_batches": status_dict["total_batches"],
+                        "completed_lines": status_dict["completed_lines"],
+                        "total_lines": status_dict["total_lines"],
+                        "percent": status_dict["progress_percent"],
+                    },
+                    "next_batch": next_batch,
+                },
+                pretty=args.pretty,
+            )
         return 0
     except Exception as e:
         _print_json({"status": "error", "error": str(e)}, pretty=args.pretty)

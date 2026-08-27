@@ -66,11 +66,12 @@ class TestSubtitleSession(unittest.TestCase):
         # Batch 1
         batch1 = session.get_next_batch()
         self.assertIsNotNone(batch1)
-        self.assertEqual(batch1["batch_number"], 1)
+        self.assertEqual(batch1["start_line"], 1)
+        self.assertEqual(batch1["end_line"], 2)
         self.assertEqual(len(batch1["batch"]), 2)
         self.assertEqual(batch1["batch"][0]["text"], "Hello, world!")
-        self.assertEqual(batch1["original_context"], [])
-        self.assertEqual(batch1["translated_context"], [])
+        self.assertNotIn("original_context", batch1)
+        self.assertNotIn("translated_context", batch1)
 
         # Commit Batch 1
         trans1 = [
@@ -85,7 +86,8 @@ class TestSubtitleSession(unittest.TestCase):
         # Batch 2
         batch2 = session.get_next_batch()
         self.assertIsNotNone(batch2)
-        self.assertEqual(batch2["batch_number"], 2)
+        self.assertEqual(batch2["start_line"], 3)
+        self.assertEqual(batch2["end_line"], 4)
         self.assertEqual(len(batch2["batch"]), 2)
         self.assertEqual(batch2["batch"][0]["text"], "This is a test subtitle.")
         self.assertEqual(len(batch2["original_context"]), 2)
@@ -315,6 +317,89 @@ class TestSubtitleSession(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertLess(t1 - t0, 2.0)
 
+    def test_get_next_batch_include_system_prompt_flag(self):
+        session = SubtitleSession(
+            input_file=self.srt_path,
+            target_language="French",
+            output_file=self.out_path,
+            batch_size=2,
+        )
+        batch_with_prompt = session.get_next_batch(include_system_prompt=True)
+        self.assertIn("system_prompt", batch_with_prompt)
+        self.assertIsNotNone(batch_with_prompt["system_prompt"])
+
+        batch_without_prompt = session.get_next_batch(include_system_prompt=False)
+        self.assertNotIn("system_prompt", batch_without_prompt)
+
+    def test_agent_cli_commit_returns_streamlined_json(self):
+        import io
+        from unittest.mock import patch
+        from gemini_srt_translator.cli import create_parser
+
+        parser = create_parser()
+
+        # 1. Start session
+        start_args = parser.parse_args(["agent", "start", self.srt_path, "-l", "French", "-b", "2"])
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            code = cmd_agent_start(start_args)
+            self.assertEqual(code, 0)
+            start_data = json.loads(fake_out.getvalue().strip())
+            self.assertEqual(start_data["status"], "ready")
+            self.assertIn("session", start_data)
+            self.assertIn("system_prompt", start_data)
+            self.assertEqual(start_data["next_batch"]["start_line"], 1)
+            self.assertEqual(start_data["next_batch"]["end_line"], 2)
+
+        # 2. Commit batch 1
+        batch1_file = os.path.join(self.temp_dir.name, "b1.json")
+        with open(batch1_file, "w", encoding="utf-8") as f:
+            json.dump([
+                {"index": "0", "text": "Bonjour"},
+                {"index": "1", "text": "Comment allez-vous"},
+            ], f)
+
+        commit1_args = parser.parse_args(["agent", "commit", self.srt_path, "--data-file", batch1_file])
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            code = cmd_agent_commit(commit1_args)
+            self.assertEqual(code, 0)
+            commit1_data = json.loads(fake_out.getvalue().strip())
+
+            # Verify streamlined structure
+            self.assertEqual(commit1_data["status"], "committed")
+            self.assertIn("progress", commit1_data)
+            self.assertEqual(commit1_data["progress"]["batch"], 2)
+            self.assertEqual(commit1_data["progress"]["completed_lines"], 2)
+            self.assertEqual(commit1_data["progress"]["total_lines"], 4)
+            self.assertEqual(commit1_data["progress"]["percent"], 50.0)
+
+            self.assertIn("next_batch", commit1_data)
+            # Verify system_prompt is omitted on commit
+            self.assertNotIn("system_prompt", commit1_data["next_batch"])
+            # Verify duplicate metadata is not present
+            self.assertNotIn("commit_result", commit1_data)
+            self.assertNotIn("session", commit1_data)
+
+        # 3. Commit batch 2 (final)
+        batch2_file = os.path.join(self.temp_dir.name, "b2.json")
+        with open(batch2_file, "w", encoding="utf-8") as f:
+            json.dump([
+                {"index": "2", "text": "Test"},
+                {"index": "3", "text": "Au revoir"},
+            ], f)
+
+        commit2_args = parser.parse_args(["agent", "commit", self.srt_path, "--data-file", batch2_file])
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            code = cmd_agent_commit(commit2_args)
+            self.assertEqual(code, 0)
+            commit2_data = json.loads(fake_out.getvalue().strip())
+
+            # Verify completion structure
+            self.assertEqual(commit2_data["status"], "completed")
+            self.assertEqual(commit2_data["progress"]["completed_lines"], 4)
+            self.assertEqual(commit2_data["progress"]["percent"], 100.0)
+            self.assertEqual(commit2_data["output_file"], self.out_path)
+            self.assertNotIn("next_batch", commit2_data)
+
 
 class TestTranscriptionSession(unittest.TestCase):
     def setUp(self):
@@ -349,7 +434,6 @@ class TestTranscriptionSession(unittest.TestCase):
         # Chunk 1 (0 to 10s)
         chunk1 = session.get_next_chunk()
         self.assertIsNotNone(chunk1)
-        self.assertEqual(chunk1["chunk_number"], 1)
         self.assertEqual(chunk1["start_seconds"], 0)
         self.assertEqual(chunk1["end_seconds"], 10)
         self.assertIsNotNone(chunk1["audio_bytes"])
@@ -369,7 +453,6 @@ class TestTranscriptionSession(unittest.TestCase):
         # Chunk 2 (10 to 20s)
         chunk2 = session.get_next_chunk()
         self.assertIsNotNone(chunk2)
-        self.assertEqual(chunk2["chunk_number"], 2)
         self.assertEqual(chunk2["start_seconds"], 10)
         self.assertEqual(chunk2["end_seconds"], 20)
 
@@ -387,6 +470,19 @@ class TestTranscriptionSession(unittest.TestCase):
         session = TranscriptionSession(audio_file=self.mp3_path)
         expected_name = os.path.join(self.temp_dir.name, "test_audio.srt")
         self.assertEqual(session.output_file, expected_name)
+
+    def test_transcription_get_next_chunk_include_system_prompt_flag(self):
+        session = TranscriptionSession(
+            audio_file=self.mp3_path,
+            output_file=self.out_path,
+            audio_chunk_size=10,
+        )
+        chunk_with_prompt = session.get_next_chunk(include_system_prompt=True)
+        self.assertIn("system_prompt", chunk_with_prompt)
+        self.assertIsNotNone(chunk_with_prompt["system_prompt"])
+
+        chunk_without_prompt = session.get_next_chunk(include_system_prompt=False)
+        self.assertNotIn("system_prompt", chunk_without_prompt)
 
     def test_transcription_cleanup_extracted_mp3_and_chunks(self):
         # Create a mock extracted mp3

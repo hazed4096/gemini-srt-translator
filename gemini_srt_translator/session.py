@@ -360,20 +360,22 @@ class SubtitleSession:
         """Return current session status and progress percentage."""
         completed_lines = min(self.total_lines, max(0, self.current_line - 1))
         percent = (completed_lines / self.total_lines * 100.0) if self.total_lines > 0 else 100.0
+        total_batches = max(1, ((self.total_lines - 1) // self.batch_size) + 1)
         return {
             "input_file": self.input_file,
             "output_file": self.output_file,
             "target_language": self.target_language,
             "total_lines": self.total_lines,
+            "total_batches": total_batches,
+            "batch_size": self.batch_size,
             "completed_lines": completed_lines,
-            "current_line": self.current_line,
-            "remaining_lines": max(0, self.total_lines - completed_lines),
             "progress_percent": round(percent, 2),
-            "is_complete": self.is_complete(),
             "batch_number": self.batch_number,
         }
 
-    def get_next_batch(self, batch_size: Optional[int] = None) -> Optional[BatchPayload]:
+    def get_next_batch(
+        self, batch_size: Optional[int] = None, include_system_prompt: bool = True
+    ) -> Optional[BatchPayload]:
         """
         Generate the next batch payload containing batch items, sliding context,
         instruction prompt, and optional audio slice.
@@ -439,32 +441,29 @@ class SubtitleSession:
                     }
                 )
 
-        # System prompt with translation instructions
-        system_prompt = get_translate_instruction(
-            language=self.target_language,
-            thinking=self.thinking,
-            thinking_compatible=self.thinking,
-            audio_file=self.audio_file,
-            description=self.description,
-        )
-
-        total_batches = max(1, ((self.total_lines - 1) // self.batch_size) + 1)
-
         payload: BatchPayload = {
-            "batch_number": self.batch_number,
-            "total_batches": total_batches,
             "start_line": start_idx + 1,
             "end_line": end_idx,
-            "total_lines": self.total_lines,
-            "progress_percent": round((start_idx / self.total_lines) * 100.0, 2),
-            "system_prompt": system_prompt,
             "batch": batch_items,
-            "original_context": original_context_items,
-            "translated_context": translated_context_items,
-            "audio_chunk_path": audio_chunk_path,
-            "audio_bytes": audio_bytes,
-            "is_complete": False,
         }
+
+        if original_context_items:
+            payload["original_context"] = original_context_items
+        if translated_context_items:
+            payload["translated_context"] = translated_context_items
+        if audio_chunk_path:
+            payload["audio_chunk_path"] = audio_chunk_path
+        if audio_bytes:
+            payload["audio_bytes"] = audio_bytes
+        if include_system_prompt:
+            payload["system_prompt"] = get_translate_instruction(
+                language=self.target_language,
+                thinking=self.thinking,
+                thinking_compatible=self.thinking,
+                audio_file=self.audio_file,
+                description=self.description,
+            )
+
         return payload
 
     def commit_batch(self, data: Union[str, List[dict], dict]) -> Dict[str, Any]:
@@ -776,18 +775,20 @@ class TranscriptionSession:
     def get_status(self) -> Dict[str, Any]:
         """Get machine-parseable progress status."""
         percent = (self.current_seconds / self.total_seconds) * 100.0 if self.total_seconds > 0 else 100.0
+        total_chunks = max(1, ((self.total_seconds - 1) // self.audio_chunk_size) + 1)
         return {
-            "current_seconds": self.current_seconds,
+            "input_file": self.audio_file if self.audio_file else self.video_file,
+            "output_file": self.output_file,
             "total_seconds": self.total_seconds,
+            "total_chunks": total_chunks,
+            "audio_chunk_size": self.audio_chunk_size,
+            "current_seconds": self.current_seconds,
             "progress_percent": round(percent, 2),
             "chunk_number": self.chunk_number,
             "subtitle_count": len(self.transcribed_subtitles),
-            "is_complete": self.is_complete(),
-            "output_file": self.output_file,
-            "audio_file": self.audio_file,
         }
 
-    def get_next_chunk(self) -> Optional[TranscribeChunkPayload]:
+    def get_next_chunk(self, include_system_prompt: bool = True) -> Optional[TranscribeChunkPayload]:
         """
         Generate the next audio slice and instructions payload for transcription.
         """
@@ -804,27 +805,21 @@ class TranscriptionSession:
         temp_audio.close()
         self._temp_chunk_files.append(temp_audio.name)
 
-        system_prompt = get_transcribe_instruction(
-            thinking=self.thinking,
-            thinking_compatible=self.thinking,
-            description=self.description,
-        )
-
-        total_chunks = max(1, ((self.total_seconds - 1) // self.audio_chunk_size) + 1)
-        percent = (self.current_seconds / self.total_seconds) * 100.0 if self.total_seconds > 0 else 0.0
-
-        return {
-            "chunk_number": self.chunk_number,
-            "total_chunks": total_chunks,
+        payload: TranscribeChunkPayload = {
             "start_seconds": self.current_seconds,
             "end_seconds": chunk_end,
-            "total_seconds": self.total_seconds,
-            "progress_percent": round(percent, 2),
-            "system_prompt": system_prompt,
             "audio_chunk_path": temp_audio.name,
             "audio_bytes": audio_bytes,
-            "is_complete": False,
         }
+
+        if include_system_prompt:
+            payload["system_prompt"] = get_transcribe_instruction(
+                thinking=self.thinking,
+                thinking_compatible=self.thinking,
+                description=self.description,
+            )
+
+        return payload
 
     @staticmethod
     def _normalize_timestamp(ts_str: str) -> str:

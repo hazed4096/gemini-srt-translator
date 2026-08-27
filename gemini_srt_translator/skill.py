@@ -131,7 +131,7 @@ gst agent commit <INPUT_FILE> --data-file batch_1_translated.json
 ### Step 3: Repeat Until Complete
 
 Each successful `commit` automatically saves progress and returns the `next_batch`.
-Repeat Step 2 until the response returns `"status": "completed"` or `"is_complete": true`.
+Repeat Step 2 until the response returns `"status": "completed"`.
 
 ### Step 4: Cleanup Temporary Files
 
