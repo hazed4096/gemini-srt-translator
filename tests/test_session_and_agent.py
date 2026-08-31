@@ -244,6 +244,30 @@ class TestSubtitleSession(unittest.TestCase):
         self.assertEqual(data["target_language"], "Spanish")
         self.assertEqual(data["batch_size"], 3)
 
+    def test_default_output_file_naming(self):
+        # Standalone subtitle: should append _translated
+        session_sub = SubtitleSession(
+            input_file=self.srt_path,
+            target_language="French",
+        )
+        self.assertEqual(session_sub.output_file, os.path.join(self.temp_dir.name, "test_translated.srt"))
+
+        # Video file + extracted subtitle: should NOT append _translated, matching video basename
+        video_path = os.path.join(self.temp_dir.name, "movie.mkv")
+        session_vid = SubtitleSession(
+            input_file=self.srt_path,
+            video_file=video_path,
+            target_language="French",
+        )
+        self.assertEqual(session_vid.output_file, os.path.join(self.temp_dir.name, "movie.srt"))
+
+        from gemini_srt_translator.main import GeminiSRTTranslator
+        t_sub = GeminiSRTTranslator(input_file=self.srt_path, target_language="French")
+        self.assertEqual(t_sub.output_file, os.path.join(self.temp_dir.name, "test_translated.srt"))
+
+        t_vid = GeminiSRTTranslator(video_file=video_path, target_language="French")
+        self.assertEqual(t_vid.output_file, os.path.join(self.temp_dir.name, "movie.srt"))
+
     def test_agent_cli_defaults_context_size_to_zero(self):
         from gemini_srt_translator.cli import create_parser
 

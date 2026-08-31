@@ -133,7 +133,10 @@ class SubtitleSession:
             self.output_file = output_file
         else:
             ext = os.path.splitext(self.input_file)[1].lower()
-            suffix = "_translated.ass" if ext == ".ass" else "_translated.srt"
+            if self.video_file or self.subtitle_extracted:
+                suffix = ext
+            else:
+                suffix = "_translated.ass" if ext == ".ass" else "_translated.srt"
             self.output_file = os.path.join(dir_path, f"{base_name}{suffix}") if dir_path else f"{base_name}{suffix}"
 
         self.progress_file = os.path.join(dir_path, f"{base_name}.progress") if dir_path else f"{base_name}.progress"

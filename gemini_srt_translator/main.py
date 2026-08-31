@@ -126,10 +126,16 @@ class GeminiSRTTranslator:
             if audio_file and not input_file and not video_file:
                 suffix = ".srt"
             else:
-                if input_file and input_file.lower().endswith(".ass"):
-                    suffix = "_translated.ass"
+                if video_file:
+                    if input_file and input_file.lower().endswith(".ass"):
+                        suffix = ".ass"
+                    else:
+                        suffix = ".srt"
                 else:
-                    suffix = "_translated.srt" if input_file else ".srt"
+                    if input_file and input_file.lower().endswith(".ass"):
+                        suffix = "_translated.ass"
+                    else:
+                        suffix = "_translated.srt" if input_file else ".srt"
             self.output_file = os.path.join(dir_path, f"{base_name}{suffix}") if dir_path else f"{base_name}{suffix}"
 
         self.progress_file = os.path.join(dir_path, f"{base_name}.progress") if dir_path else f"{base_name}.progress"
@@ -414,7 +420,7 @@ class GeminiSRTTranslator:
                 if base_name.endswith("_extracted"):
                     base_name = base_name[:-10]
                 dir_path = os.path.dirname(base_source)
-                suffix = "_translated" + ext
+                suffix = ext if self.video_file else ("_translated" + ext)
                 self.output_file = (
                     os.path.join(dir_path, f"{base_name}{suffix}") if dir_path else f"{base_name}{suffix}"
                 )
@@ -497,9 +503,8 @@ class GeminiSRTTranslator:
                 base_name = base_name[:-10]
             ext = os.path.splitext(self.input_file)[1] if self.input_file else ".srt"
             dir_path = os.path.dirname(base_source) if base_source else ""
-            expected_output = (
-                os.path.join(dir_path, f"{base_name}_translated{ext}") if dir_path else f"{base_name}_translated{ext}"
-            )
+            suffix = ext if self.video_file else f"_translated{ext}"
+            expected_output = os.path.join(dir_path, f"{base_name}{suffix}") if dir_path else f"{base_name}{suffix}"
             self.output_file = expected_output
 
         if self.input_file and os.path.exists(self.input_file):
@@ -788,9 +793,6 @@ class GeminiSRTTranslator:
             success_with_progress("✅ Translation completed successfully!")
         if self.progress_log:
             save_logs_to_file(self.log_file_path)
-        SubtitleSession._save_subtitle_file(
-            self.session.input_file, self.session.translated_subtitles, self.session.output_file
-        )
 
         self._write_token_report("translate")
 
