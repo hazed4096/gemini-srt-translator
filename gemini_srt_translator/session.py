@@ -88,7 +88,7 @@ class SubtitleSession:
         start_line: Optional[int] = None,
         context_size: Optional[int] = None,
         description: Optional[str] = None,
-        audio_chunk_size: int = 300,
+        audio_chunk_size: Optional[int] = None,
         extract_audio: bool = False,
         isolate_voice: bool = True,
         resume: Optional[bool] = None,
@@ -101,7 +101,7 @@ class SubtitleSession:
         self.batch_size = max(1, batch_size) if batch_size is not None else None
         self.context_size = max(0, int(context_size)) if context_size is not None else None
         self.description = description
-        self.audio_chunk_size = audio_chunk_size
+        self.audio_chunk_size = max(1, int(audio_chunk_size)) if audio_chunk_size is not None else None
         self.extract_audio = extract_audio
         self.isolate_voice = isolate_voice
         self.resume = resume
@@ -232,6 +232,13 @@ class SubtitleSession:
                 self.context_size = max(0, int(saved_data["context_size"]))
             if self.description is None and "description" in saved_data:
                 self.description = saved_data["description"]
+            if self.audio_chunk_size is None and "audio_chunk_size" in saved_data and saved_data["audio_chunk_size"]:
+                self.audio_chunk_size = max(1, int(saved_data["audio_chunk_size"]))
+            if self.audio_file is None and "audio_file" in saved_data and saved_data["audio_file"]:
+                self.audio_file = saved_data["audio_file"]
+                self._init_audio()
+            if self.video_file is None and "video_file" in saved_data and saved_data["video_file"]:
+                self.video_file = saved_data["video_file"]
         else:
             self.current_line = (
                 max(1, min(explicit_start_line, self.total_lines)) if explicit_start_line is not None else 1
@@ -243,6 +250,8 @@ class SubtitleSession:
             self.batch_size = 100
         if self.context_size is None:
             self.context_size = 0
+        if self.audio_chunk_size is None:
+            self.audio_chunk_size = 300
 
         # Check existing translated output file
         if self.current_line > 1 and os.path.exists(self.output_file):
@@ -294,6 +303,9 @@ class SubtitleSession:
                 "output_file": self.output_file,
                 "context_size": self.context_size,
                 "description": self.description,
+                "audio_chunk_size": self.audio_chunk_size,
+                "audio_file": self.audio_file,
+                "video_file": self.video_file,
             }
             temp_dir = os.path.dirname(os.path.abspath(self.progress_file)) or "."
             temp_progress = os.path.join(temp_dir, f".tmp_{os.path.basename(self.progress_file)}")
@@ -376,6 +388,27 @@ class SubtitleSession:
             "batch_number": self.batch_number,
         }
 
+    def _get_expected_batch_count(self, batch_size: Optional[int] = None) -> int:
+        """
+        Calculate expected number of items for the upcoming batch based on batch_size and audio chunking.
+        """
+        if self.is_complete():
+            return 0
+        effective_batch_size = batch_size or self.batch_size or 100
+        start_idx = self.current_line - 1
+        end_idx = min(self.total_lines, start_idx + effective_batch_size)
+        if not self.audio_file or self.audio_chunk_size is None:
+            return max(0, end_idx - start_idx)
+
+        offset = self.original_subtitles[start_idx].start.seconds if start_idx < self.total_lines else 0
+        count = 0
+        for idx in range(start_idx, end_idx):
+            sub = self.original_subtitles[idx]
+            if count > 0 and (sub.end.seconds - offset > self.audio_chunk_size):
+                break
+            count += 1
+        return count
+
     def get_next_batch(
         self, batch_size: Optional[int] = None, include_system_prompt: bool = True
     ) -> Optional[BatchPayload]:
@@ -386,7 +419,10 @@ class SubtitleSession:
         if self.is_complete():
             return None
 
-        effective_batch_size = batch_size or self.batch_size
+        if batch_size is not None:
+            self.batch_size = max(1, batch_size)
+
+        effective_batch_size = self.batch_size or 100
         start_idx = self.current_line - 1
         end_idx = min(self.total_lines, start_idx + effective_batch_size)
 
@@ -422,6 +458,9 @@ class SubtitleSession:
                 temp_audio.write(audio_bytes)
                 temp_audio.close()
                 audio_chunk_path = temp_audio.name
+                if not hasattr(self, "_temp_chunk_files"):
+                    self._temp_chunk_files = []
+                self._temp_chunk_files.append(temp_audio.name)
             except Exception as e:
                 warning(f"Failed to slice audio chunk: {e}")
 
@@ -446,7 +485,7 @@ class SubtitleSession:
 
         payload: BatchPayload = {
             "start_line": start_idx + 1,
-            "end_line": end_idx,
+            "end_line": start_idx + len(batch_items),
             "batch": batch_items,
         }
 
@@ -513,7 +552,7 @@ class SubtitleSession:
             return {"success": False, "error": "No valid subtitle items found in translation data."}
 
         start_idx = self.current_line - 1
-        expected_count = min(self.batch_size, self.total_lines - start_idx)
+        expected_count = self._get_expected_batch_count()
 
         # Validation: check item count
         if len(parsed_items) != expected_count:
@@ -561,12 +600,19 @@ class SubtitleSession:
         }
 
     def cleanup(self):
-        """Remove temporary extracted audio, subtitle, and progress files."""
+        """Remove temporary extracted audio, chunk slices, subtitle, and progress files."""
         if self.audio_extracted and self.audio_file and os.path.exists(self.audio_file):
             try:
                 os.remove(self.audio_file)
             except Exception:
                 pass
+        if hasattr(self, "_temp_chunk_files"):
+            for chunk_path in self._temp_chunk_files:
+                if chunk_path and os.path.exists(chunk_path):
+                    try:
+                        os.remove(chunk_path)
+                    except Exception:
+                        pass
         if self.subtitle_extracted and self.input_file and os.path.exists(self.input_file):
             try:
                 os.remove(self.input_file)

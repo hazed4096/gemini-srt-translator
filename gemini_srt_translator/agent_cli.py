@@ -44,9 +44,12 @@ def cmd_agent_start(args) -> int:
             input_file=args.input_file,
             target_language=args.target_language,
             output_file=args.output_file,
+            video_file=getattr(args, "video_file", None),
+            audio_file=getattr(args, "audio_file", None),
             batch_size=getattr(args, "batch_size", None) or 100,
             context_size=getattr(args, "context_size", 0),
             description=getattr(args, "description", None),
+            audio_chunk_size=getattr(args, "audio_chunk_size", None),
             resume=getattr(args, "resume", True),
         )
 

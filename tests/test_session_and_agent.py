@@ -244,6 +244,116 @@ class TestSubtitleSession(unittest.TestCase):
         self.assertEqual(data["target_language"], "Spanish")
         self.assertEqual(data["batch_size"], 3)
 
+    def test_audio_chunk_size_limits_batch_and_commits_successfully(self):
+        mp3_path = os.path.join(self.temp_dir.name, "test_audio.mp3")
+        seg = AudioSegment.silent(duration=30000)
+        seg.export(mp3_path, format="mp3")
+
+        # SAMPLE_SRT timestamps:
+        # line 1: 00:00:01 -> 00:00:03 (offset 1s, duration 2s)
+        # line 2: 00:00:04 -> 00:00:06 (end - offset = 5s)
+        # line 3: 00:00:07 -> 00:00:09 (end - offset = 8s)
+        # line 4: 00:00:10 -> 00:00:12 (end - offset = 11s)
+        # With audio_chunk_size=5, batch 1 will include lines 1 and 2 (line 3 has 9-1=8 > 5)
+        session = SubtitleSession(
+            input_file=self.srt_path,
+            target_language="French",
+            output_file=self.out_path,
+            audio_file=mp3_path,
+            batch_size=100,
+            audio_chunk_size=5,
+        )
+
+        self.assertEqual(session.audio_chunk_size, 5)
+
+        # Batch 1 should have 2 items despite batch_size=100
+        batch1 = session.get_next_batch()
+        self.assertIsNotNone(batch1)
+        self.assertEqual(len(batch1["batch"]), 2)
+        self.assertEqual(batch1["start_line"], 1)
+        self.assertEqual(batch1["end_line"], 2)
+
+        # Committing 2 items should succeed
+        res1 = session.commit_batch([
+            {"index": "0", "text": "Bonjour, monde !"},
+            {"index": "1", "text": "Comment allez-vous ?"},
+        ])
+        self.assertTrue(res1["success"])
+        self.assertEqual(res1["committed_lines"], 2)
+        self.assertEqual(session.current_line, 3)
+
+        # Batch 2 should have next 2 items
+        batch2 = session.get_next_batch()
+        self.assertIsNotNone(batch2)
+        self.assertEqual(len(batch2["batch"]), 2)
+        self.assertEqual(batch2["start_line"], 3)
+        self.assertEqual(batch2["end_line"], 4)
+
+        # Committing 2 items should complete session
+        res2 = session.commit_batch([
+            {"index": "2", "text": "Ceci est un test."},
+            {"index": "3", "text": "Au revoir !"},
+        ])
+        self.assertTrue(res2["success"])
+        self.assertTrue(res2["is_complete"])
+        self.assertTrue(session.is_complete())
+
+    def test_audio_chunk_size_commit_validation_mismatch(self):
+        mp3_path = os.path.join(self.temp_dir.name, "test_audio.mp3")
+        seg = AudioSegment.silent(duration=30000)
+        seg.export(mp3_path, format="mp3")
+
+        session = SubtitleSession(
+            input_file=self.srt_path,
+            target_language="French",
+            output_file=self.out_path,
+            audio_file=mp3_path,
+            batch_size=100,
+            audio_chunk_size=5,
+        )
+
+        # Batch 1 expects 2 items. Passing 1 or 4 should fail with Item count mismatch
+        res_fail_1 = session.commit_batch([{"index": "0", "text": "Item 1 only"}])
+        self.assertFalse(res_fail_1["success"])
+        self.assertIn("Item count mismatch: expected 2 items, but received 1 items", res_fail_1["error"])
+
+        res_fail_4 = session.commit_batch([
+            {"index": "0", "text": "Item 1"},
+            {"index": "1", "text": "Item 2"},
+            {"index": "2", "text": "Item 3"},
+            {"index": "3", "text": "Item 4"},
+        ])
+        self.assertFalse(res_fail_4["success"])
+        self.assertIn("Item count mismatch: expected 2 items, but received 4 items", res_fail_4["error"])
+
+    def test_audio_chunk_size_persists_in_progress_file(self):
+        mp3_path = os.path.join(self.temp_dir.name, "test_audio.mp3")
+        seg = AudioSegment.silent(duration=30000)
+        seg.export(mp3_path, format="mp3")
+
+        session1 = SubtitleSession(
+            input_file=self.srt_path,
+            target_language="French",
+            output_file=self.out_path,
+            audio_file=mp3_path,
+            batch_size=100,
+            audio_chunk_size=15,
+        )
+        progress_path = os.path.join(self.temp_dir.name, "test.progress")
+        self.assertTrue(os.path.exists(progress_path))
+        with open(progress_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        self.assertEqual(data["audio_chunk_size"], 15)
+        self.assertEqual(data["audio_file"], mp3_path)
+
+        # Re-instantiate session with resume=True without re-passing audio_chunk_size
+        session2 = SubtitleSession(
+            input_file=self.srt_path,
+            resume=True,
+        )
+        self.assertEqual(session2.audio_chunk_size, 15)
+        self.assertEqual(session2.audio_file, mp3_path)
+
     def test_default_output_file_naming(self):
         # Standalone subtitle: should append _translated
         session_sub = SubtitleSession(

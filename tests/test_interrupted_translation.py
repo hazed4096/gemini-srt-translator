@@ -346,6 +346,67 @@ class InterruptedTranslationTests(unittest.TestCase):
             self.assertEqual(raised.exception.code, 130)
             self.assertIn("503 model overloaded", captured.getvalue())
 
+    def test_translation_with_audio_chunk_size_smaller_than_batch_size(self):
+        from pydub import AudioSegment
+
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+            root = Path(tmp)
+            input_file = root / "sample.en.srt"
+            output_file = root / "sample.zh.srt"
+            audio_file = root / "sample.mp3"
+            input_file.write_text(
+                "1\n00:00:01,000 --> 00:00:03,000\nLine one\n\n"
+                "2\n00:00:04,000 --> 00:00:06,000\nLine two\n\n"
+                "3\n00:00:07,000 --> 00:00:09,000\nLine three\n\n"
+                "4\n00:00:10,000 --> 00:00:12,000\nLine four\n",
+                encoding="utf-8",
+            )
+            seg = AudioSegment.silent(duration=20000)
+            seg.export(str(audio_file), format="mp3")
+
+            translator = GeminiSRTTranslator(
+                gemini_api_key="test-key",
+                target_language="Simplified Chinese",
+                input_file=str(input_file),
+                output_file=str(output_file),
+                audio_file=str(audio_file),
+                model_name="gemini-flash-latest",
+                batch_size=100,
+                audio_chunk_size=5,
+                use_colors=False,
+                resume=False,
+            )
+
+            batches_processed = []
+
+            def process_batches(batch, previous_message, translated_subtitle):
+                batches_processed.append([item["index"] for item in batch])
+                translator.translated_batch = [
+                    {"index": str(int(item["index"])), "text": f"Trans_{item['index']}"}
+                    for item in batch
+                ]
+                return None
+
+            with (
+                patch.object(translator, "getmodels", return_value=["gemini-flash-latest"]),
+                patch.object(translator, "_get_token_limit", return_value=None),
+                patch.object(translator, "_validate_token_size", return_value=True),
+                patch.object(translator, "_process_batch", side_effect=process_batches),
+                patch("gemini_srt_translator.main.progress_bar", return_value=None),
+                patch("gemini_srt_translator.main.info_with_progress", return_value=None),
+                patch("gemini_srt_translator.main.warning_with_progress", return_value=None),
+                patch("gemini_srt_translator.main.error_with_progress", return_value=None),
+                patch("gemini_srt_translator.main.success_with_progress", return_value=None),
+                patch("gemini_srt_translator.main.highlight", return_value=None),
+            ):
+                translator.translate()
+
+            self.assertEqual(len(batches_processed), 2)
+            self.assertEqual(batches_processed[0], ["0", "1"])
+            self.assertEqual(batches_processed[1], ["2", "3"])
+            self.assertTrue(translator.session.is_complete())
+
 
 if __name__ == "__main__":
     unittest.main()
+
