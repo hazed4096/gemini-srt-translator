@@ -57,6 +57,8 @@ context_size: int = 50
 description: str = None
 model_name: str = None
 batch_size: int = None
+batch_size_error_step: int = None
+audio_chunk_error_step: int = None
 streaming: bool = None
 thinking: bool = None
 thinking_budget: int = None
@@ -308,6 +310,8 @@ def translate():
         "description": description,
         "model_name": model_name,
         "batch_size": batch_size,
+        "batch_size_error_step": batch_size_error_step,
+        "audio_chunk_error_step": audio_chunk_error_step,
         "streaming": streaming,
         "thinking": thinking,
         "thinking_budget": thinking_budget,
@@ -440,6 +444,7 @@ def transcribe():
         "model_name": model_name,
         "description": description,
         "audio_chunk_size": audio_chunk_size,
+        "audio_chunk_error_step": audio_chunk_error_step,
         "isolate_voice": isolate_voice,
         "output_file": output_file,
         "streaming": streaming,

@@ -80,6 +80,8 @@ class GeminiSRTTranslator:
         description: str = None,
         model_name: str = "gemini-3.7-flash",
         batch_size: int = 1000,
+        batch_size_error_step: int = 100,
+        audio_chunk_error_step: int = 60,
         streaming: bool = True,
         thinking: bool = True,
         thinking_budget: int = None,
@@ -160,6 +162,10 @@ class GeminiSRTTranslator:
         self.description = description
         self.model_name = model_name
         self.batch_size = batch_size
+        self.batch_size_error_step = max(1, int(batch_size_error_step)) if batch_size_error_step is not None else 100
+        self.audio_chunk_error_step = max(1, int(audio_chunk_error_step)) if audio_chunk_error_step is not None else 60
+        self._original_batch_size = batch_size
+        self._original_audio_chunk_size = audio_chunk_size
         self.streaming = streaming
         self.thinking = thinking
         self.thinking_budget = thinking_budget
@@ -196,6 +202,70 @@ class GeminiSRTTranslator:
         self.max_consecutive_errors = 3
 
         set_color_mode(use_colors)
+
+    def _reduce_batch_size(self):
+        """Temporarily reduce batch size and audio chunk size due to error."""
+        reduction = self.batch_size_error_step * self.consecutive_error_count
+        floor = min(100, self._original_batch_size) if self._original_batch_size is not None else 100
+        new_batch_size = max(floor, (self._original_batch_size or self.batch_size) - reduction)
+        if new_batch_size != self.batch_size:
+            self.batch_size = new_batch_size
+            warning_with_progress(f"Temporarily reducing batch size to {self.batch_size}.")
+        if self.audio_file and self._original_audio_chunk_size:
+            audio_reduction = self.audio_chunk_error_step * self.consecutive_error_count
+            audio_floor = min(60, self._original_audio_chunk_size)
+            new_audio_chunk = max(audio_floor, self._original_audio_chunk_size - audio_reduction)
+            if new_audio_chunk != self.audio_chunk_size:
+                self.audio_chunk_size = new_audio_chunk
+                if hasattr(self, "session") and self.session:
+                    self.session.audio_chunk_size = new_audio_chunk
+                warning_with_progress(f"Temporarily reducing audio chunk size to {self.audio_chunk_size}s.")
+
+    def _restore_batch_size(self):
+        """Restore original batch size and audio chunk size after successful batch."""
+        if self._original_batch_size is not None and self.batch_size != self._original_batch_size:
+            info_with_progress(f"Restoring batch size to {self._original_batch_size}.")
+            self.batch_size = self._original_batch_size
+        if (
+            self.audio_file
+            and self._original_audio_chunk_size is not None
+            and self.audio_chunk_size != self._original_audio_chunk_size
+        ):
+            info_with_progress(f"Restoring audio chunk size to {self._original_audio_chunk_size}s.")
+            self.audio_chunk_size = self._original_audio_chunk_size
+            if hasattr(self, "session") and self.session:
+                self.session.audio_chunk_size = self._original_audio_chunk_size
+
+    def _reduce_transcribe_chunk_size(self, error_count: int = 1):
+        """Temporarily reduce transcription audio chunk size due to error."""
+        if self._original_audio_chunk_size is None:
+            return
+        audio_reduction = self.audio_chunk_error_step * error_count
+        audio_floor = min(60, self._original_audio_chunk_size)
+        new_chunk_size = max(audio_floor, self._original_audio_chunk_size - audio_reduction)
+        if hasattr(self, "transcription_session") and self.transcription_session:
+            if new_chunk_size != self.transcription_session.audio_chunk_size:
+                self.transcription_session.audio_chunk_size = new_chunk_size
+                self.audio_chunk_size = new_chunk_size
+                warning_with_progress(
+                    f"Temporarily reducing audio chunk size to {new_chunk_size}s.",
+                    isTranscribing=True,
+                )
+
+    def _restore_transcribe_chunk_size(self):
+        """Restore original transcription audio chunk size after successful chunk."""
+        if (
+            hasattr(self, "transcription_session")
+            and self.transcription_session
+            and self._original_audio_chunk_size is not None
+        ):
+            if self.transcription_session.audio_chunk_size != self._original_audio_chunk_size:
+                info_with_progress(
+                    f"Restoring audio chunk size to {self._original_audio_chunk_size}s.",
+                    isTranscribing=True,
+                )
+                self.transcription_session.audio_chunk_size = self._original_audio_chunk_size
+                self.audio_chunk_size = self._original_audio_chunk_size
 
     def _get_translate_config(self):
         """Get the configuration for the translation model."""
@@ -557,6 +627,9 @@ class GeminiSRTTranslator:
             if len(original_subtitle) < self.batch_size:
                 self.batch_size = len(original_subtitle)
 
+            self._original_batch_size = self.batch_size
+            self._original_audio_chunk_size = self.audio_chunk_size
+
         # Initialize SubtitleSession to handle all subtitle parsing, batching, and progress saving
         self.session = SubtitleSession(
             input_file=self.input_file,
@@ -707,6 +780,7 @@ class GeminiSRTTranslator:
 
                 server_overload_retries = 0
                 self.consecutive_error_count = 0
+                self._restore_batch_size()
 
                 progress_bar(
                     self.session.current_line - 1,
@@ -750,6 +824,7 @@ class GeminiSRTTranslator:
                     continue
 
                 elif any(err in e_str for err in ["429", "500", "503", "unavailable", "overloaded"]):
+                    self._reduce_batch_size()
                     server_overload_retries += 1
                     if server_overload_retries <= max_overload_retries:
                         warning_with_progress(
@@ -773,8 +848,13 @@ class GeminiSRTTranslator:
                     else:
                         warning_with_progress(f"An unexpected error occurred: {e}.")
 
-                    start_index_in_batch = int(batch[0]["index"]) + 1
-                    end_index_in_batch = int(batch[-1]["index"]) + 1
+                    self._reduce_batch_size()
+
+                    expected_lines = self.session._get_expected_batch_count(batch_size=self.batch_size)
+                    start_index_in_batch = self.session.current_line
+                    end_index_in_batch = (
+                        self.session.current_line + expected_lines - 1 if expected_lines > 0 else start_index_in_batch
+                    )
                     info_with_progress(
                         f"Retrying batch for lines {start_index_in_batch}-{end_index_in_batch}...",
                         isSending=True,
@@ -1353,6 +1433,7 @@ class GeminiSRTTranslator:
 
         self.audio_file = self.transcription_session.audio_file
         self.output_file = self.transcription_session.output_file
+        self._original_audio_chunk_size = self.transcription_session.audio_chunk_size
         audio_length = self.transcription_session.total_seconds
 
         def handle_interrupt(signal_received, frame):
@@ -1375,41 +1456,41 @@ class GeminiSRTTranslator:
         try:
             last_time = 0
             while not self.transcription_session.is_complete():
-                chunk_payload = self.transcription_session.get_next_chunk()
-                if not chunk_payload:
-                    break
-
-                current_length = chunk_payload["start_seconds"]
-                chunk_end = chunk_payload["end_seconds"]
-                audio_part = types.Part.from_bytes(data=chunk_payload["audio_bytes"], mime_type="audio/mp3")
-                current_message = types.Content(role="user", parts=[audio_part])
-                progress_bar(
-                    current_length,
-                    audio_length,
-                    prefix="Transcribing:",
-                    suffix=(f"\033[31m{self.model_name}" if self.use_colors else f"{self.model_name}"),
-                    isSending=True,
-                    isTranscribing=True,
-                    token_stats=self.token_stats,
-                )
-                if self.use_colors:
-                    info_with_progress(
-                        f"Transcribing audio segment \033[93m{convert_timedelta_to_timestamp(timedelta(seconds=current_length))} \033[94mto \033[93m{convert_timedelta_to_timestamp(timedelta(seconds=chunk_end))}.",
-                        isTranscribing=True,
-                        isSending=True,
-                    )
-                else:
-                    info_with_progress(
-                        f"Transcribing audio segment {convert_timedelta_to_timestamp(timedelta(seconds=current_length))} to {convert_timedelta_to_timestamp(timedelta(seconds=chunk_end))}.",
-                        isTranscribing=True,
-                        isSending=True,
-                    )
-
                 max_retries = 3
                 server_error_retries = 0
                 chunk_processed_successfully = False
 
                 while not chunk_processed_successfully:
+                    chunk_payload = self.transcription_session.get_next_chunk()
+                    if not chunk_payload:
+                        break
+
+                    current_length = chunk_payload["start_seconds"]
+                    chunk_end = chunk_payload["end_seconds"]
+                    audio_part = types.Part.from_bytes(data=chunk_payload["audio_bytes"], mime_type="audio/mp3")
+                    current_message = types.Content(role="user", parts=[audio_part])
+                    progress_bar(
+                        current_length,
+                        audio_length,
+                        prefix="Transcribing:",
+                        suffix=(f"\033[31m{self.model_name}" if self.use_colors else f"{self.model_name}"),
+                        isSending=True,
+                        isTranscribing=True,
+                        token_stats=self.token_stats,
+                    )
+                    if self.use_colors:
+                        info_with_progress(
+                            f"Transcribing audio segment \033[93m{convert_timedelta_to_timestamp(timedelta(seconds=current_length))} \033[94mto \033[93m{convert_timedelta_to_timestamp(timedelta(seconds=chunk_end))}.",
+                            isTranscribing=True,
+                            isSending=True,
+                        )
+                    else:
+                        info_with_progress(
+                            f"Transcribing audio segment {convert_timedelta_to_timestamp(timedelta(seconds=current_length))} to {convert_timedelta_to_timestamp(timedelta(seconds=chunk_end))}.",
+                            isTranscribing=True,
+                            isSending=True,
+                        )
+
                     try:
                         done = False
                         retry = -1
@@ -1626,9 +1707,10 @@ class GeminiSRTTranslator:
 
                         elif any(err in e_str for err in ["429", "500", "503", "unavailable", "overloaded"]):
                             server_error_retries += 1
+                            self._reduce_transcribe_chunk_size(server_error_retries)
                             if server_error_retries < max_retries:
                                 warning_with_progress(
-                                    f"Model is overloaded. Attempt {server_error_retries + 1}/{max_retries}. Pausing for 60 seconds...",
+                                    f"Model is overloaded. Attempt {server_error_retries}/{max_retries}. Pausing for 60 seconds...",
                                     isTranscribing=True,
                                 )
                                 time.sleep(60)
@@ -1641,6 +1723,8 @@ class GeminiSRTTranslator:
                                 raise e
 
                         else:
+                            server_error_retries += 1
+                            self._reduce_transcribe_chunk_size(server_error_retries)
                             warning_with_progress(
                                 f"An unexpected error occurred: {e_str}. Retrying immediately...",
                                 isTranscribing=True,
@@ -1649,6 +1733,7 @@ class GeminiSRTTranslator:
                             continue
 
                 server_error_retries = 0
+                self._restore_transcribe_chunk_size()
                 self.batch_number += 1
                 if self.progress_log:
                     save_logs_to_file(self.log_file_path)

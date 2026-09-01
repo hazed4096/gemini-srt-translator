@@ -151,6 +151,10 @@ def cmd_translate(args) -> None:
         gst.description = args.description
     if args.batch_size:
         gst.batch_size = args.batch_size
+    if args.batch_size_error_step:
+        gst.batch_size_error_step = args.batch_size_error_step
+    if args.audio_chunk_error_step:
+        gst.audio_chunk_error_step = args.audio_chunk_error_step
     if args.temperature:
         gst.temperature = args.temperature
     if args.top_p:
@@ -307,6 +311,8 @@ def cmd_transcribe(args) -> None:
         gst.description = args.description
     if args.audio_chunk_size:
         gst.audio_chunk_size = args.audio_chunk_size
+    if args.audio_chunk_error_step:
+        gst.audio_chunk_error_step = args.audio_chunk_error_step
     if args.thinking_budget:
         gst.thinking_budget = args.thinking_budget
     if args.thinking_level:
@@ -445,6 +451,14 @@ Examples:
     translate_parser.add_argument("-d", "--description", help="Description for translation context")
     translate_parser.add_argument("-m", "--model", help="Gemini model to use")
     translate_parser.add_argument("-b", "--batch-size", type=int, help="Batch size for translation")
+    translate_parser.add_argument(
+        "--batch-size-error-step", type=int, help="Batch size reduction step per error (default: 100)"
+    )
+    translate_parser.add_argument(
+        "--audio-chunk-error-step",
+        type=int,
+        help="Audio chunk size reduction step per error in seconds (default: 60)",
+    )
     translate_parser.add_argument("--audio-chunk-size", type=int, help="Audio chunk size for processing in seconds")
     translate_parser.add_argument("--temperature", type=float, help="Temperature (0.0-2.0)")
     translate_parser.add_argument("--top-p", type=float, help="Top P (0.0-1.0)")
@@ -520,6 +534,11 @@ Examples:
     transcribe_parser.add_argument("-m", "--model", help="Gemini model to use")
     transcribe_parser.add_argument("-d", "--description", help="Description for transcription context")
     transcribe_parser.add_argument("--audio-chunk-size", type=int, help="Audio chunk size for processing in seconds")
+    transcribe_parser.add_argument(
+        "--audio-chunk-error-step",
+        type=int,
+        help="Audio chunk size reduction step per error in seconds (default: 60)",
+    )
     transcribe_parser.add_argument("--thinking-budget", type=int, help="Thinking budget (0-32768)")
     transcribe_parser.add_argument("--thinking-level", type=str, help="Thinking level (minimal, low, medium, high)")
     transcribe_parser.add_argument(

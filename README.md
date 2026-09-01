@@ -227,6 +227,8 @@ gst translate \
   --model gemini-3.5-flash \
   --service-tier standard \
   --batch-size 150 \
+  --batch-size-error-step 50 \
+  --audio-chunk-error-step 30 \
   --context-size 50 \
   --temperature 0.7 \
   --description "Medical TV series, use medical terminology" \
@@ -369,6 +371,8 @@ gst.extract("audio")
 - `context_size`: Number of previous subtitle lines to include as context (default: 50, 0 disables context).
 - `description`: Description of the translation job.
 - `batch_size`: Batch size (default: 1000).
+- `batch_size_error_step`: Batch size reduction step in lines per consecutive API/network error (default: 100).
+- `audio_chunk_error_step`: Audio chunk size reduction step in seconds per consecutive API/network error (default: 60).
 - `free_quota`: Signal GST that you are using a free quota (default: True).
 - `skip_upgrade`: Skip version upgrade check (default: False).
 - `use_colors`: Activate colors in terminal (default: True).
@@ -413,6 +417,8 @@ gst.start_line = 20
 gst.description = "Medical TV series, use medical terms"
 gst.model_name = "gemini-3.5-flash"
 gst.batch_size = 150
+gst.batch_size_error_step = 50
+gst.audio_chunk_error_step = 30
 gst.streaming = True
 gst.thinking = True
 gst.thinking_budget = 4096
