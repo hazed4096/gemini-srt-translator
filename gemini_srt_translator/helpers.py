@@ -1,6 +1,4 @@
-from typing import List, Optional
-
-from google.genai import types
+from typing import Optional
 
 # ==============================================================================
 # INSTRUCTION GENERATION FOR TRANSLATION
@@ -224,7 +222,7 @@ Use this context to improve transcription accuracy. These notes do not override 
 # ==============================================================================
 
 
-def get_safety_settings() -> List[types.SafetySetting]:
+def get_safety_settings():
     """
     Configures the safety settings for the generative model.
 
@@ -236,6 +234,8 @@ def get_safety_settings() -> List[types.SafetySetting]:
     Returns:
         A list of SafetySetting objects with all thresholds set to BLOCK_NONE.
     """
+    from google.genai import types
+
     return [
         types.SafetySetting(
             category=category,
@@ -250,10 +250,12 @@ def get_safety_settings() -> List[types.SafetySetting]:
     ]
 
 
-def get_translate_response_schema() -> types.Schema:
+def get_translate_response_schema():
     """
     Defines the expected JSON schema for the translation model's response.
     """
+    from google.genai import types
+
     return types.Schema(
         type="ARRAY",
         items=types.Schema(
@@ -267,10 +269,12 @@ def get_translate_response_schema() -> types.Schema:
     )
 
 
-def get_transcribe_response_schema() -> types.Schema:
+def get_transcribe_response_schema():
     """
     Defines the expected JSON schema for the transcription model's response.
     """
+    from google.genai import types
+
     return types.Schema(
         type="ARRAY",
         items=types.Schema(
