@@ -115,6 +115,46 @@ import gemini_srt_translator as gst
 gst.gemini_api_key = "your_api_key_here"
 ```
 
+### 🧠 OpenRouter Support (any model, including free ones)
+
+Instead of Google Gemini, you can run the translator against **any model on [OpenRouter](https://openrouter.ai)** — including the free model router — with `--provider openrouter`.
+
+Get a key at [openrouter.ai/keys](https://openrouter.ai/keys), then:
+
+```bash
+# Use the free model router (default when no model is given)
+export OPENROUTER_API_KEY="sk-or-..."
+gst translate -i subtitle.srt -l French --provider openrouter
+
+# Use any specific model by id
+gst translate -i subtitle.srt -l French --provider openrouter -m qwen/qwen3.8-27b:free
+
+# Paid models work the same way
+gst translate -i subtitle.srt -l French --provider openrouter -m anthropic/claude-sonnet-4.5
+```
+
+List the models you have access to, optionally filtered to free ones:
+
+```bash
+gst list-models --provider openrouter
+gst list-models --provider openrouter --free-only
+```
+
+| Option | Description |
+| --- | --- |
+| `--provider openrouter` | Route requests through OpenRouter instead of Gemini |
+| `--openrouter-key KEY` | API key (falls back to `OPENROUTER_API_KEY`) |
+| `--openrouter-base-url URL` | Override the API base URL (default `https://openrouter.ai/api/v1`, so proxies and compatible gateways work too) |
+| `--openrouter-app-title NAME` | App name reported to OpenRouter |
+| `--free-only` | Only allow `:free` models / the free router; rejects paid model ids up front |
+
+Notes:
+
+- The default model is **`openrouter/free`**, OpenRouter's router that automatically picks a free model, so it needs no credits.
+- Free models are rate-limited upstream, so a `429` from a specific model is normal. Retry, pick a different model, or fall back to `openrouter/free`.
+- You can combine providers with the Python API by setting `gst.provider = "openrouter"` and `gst.openrouter_api_key`.
+- `--provider openrouter` works for both `translate` and `transcribe`; audio-capable models are sent as base64 `input_audio` blocks.
+
 ### ☁️ Agent Platform (Vertex AI) Support
 
 You can also use Google Cloud's **Agent Platform** (formerly known as Vertex AI) instead of the standard Google AI Studio Gemini API.
@@ -200,8 +240,15 @@ gst translate -v movie.mp4 -l Spanish
 # Extract and use audio from video for context (requires FFmpeg)
 gst translate -v movie.mp4 -l Spanish --extract-audio
 
-# Interactive model selection
-gst translate -i subtitle.srt -l "Brazilian Portuguese" --interactive
+  # Interactive model selection
+    gst translate -i subtitle.srt -l "Brazilian Portuguese" --interactive
+
+  # Translate with any OpenRouter model instead of Gemini
+    gst translate -i subtitle.srt -l French --provider openrouter
+
+  # Use OpenRouter's free model router
+    gst translate -i subtitle.srt -l French --provider openrouter -m openrouter/free
+
 
 # Resume translation from a specific line
 gst translate -i subtitle.srt -l French --start-line 20

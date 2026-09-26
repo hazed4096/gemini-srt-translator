@@ -77,9 +77,56 @@ def resolve_token_report_path(args) -> Optional[str]:
     return args.token_report
 
 
-def cmd_translate(args) -> None:
-    """Handle translate command."""
+DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
+
+def add_openrouter_args(parser) -> None:
+    """Add OpenRouter provider options to a subcommand parser."""
+    parser.add_argument(
+        "--provider",
+        choices=["gemini", "openrouter"],
+        default="gemini",
+        help="Model provider to use (default: gemini)",
+    )
+    parser.add_argument(
+        "--openrouter-key",
+        help="OpenRouter API key (falls back to OPENROUTER_API_KEY)",
+    )
+    parser.add_argument(
+        "--openrouter-base-url",
+        help=f"OpenRouter API base URL (default: {DEFAULT_OPENROUTER_BASE_URL})",
+    )
+    parser.add_argument(
+        "--openrouter-app-title",
+        help="App title reported to OpenRouter",
+    )
+    parser.add_argument(
+        "--free-only",
+        action="store_true",
+        default=None,
+        help="With OpenRouter, only list/use models ending in ':free'",
+    )
+
+
+def configure_api(args) -> None:
+    """Resolve provider and credentials from CLI arguments or environment."""
+    provider = getattr(args, "provider", "gemini")
+    if provider == "openrouter":
+        gst.provider = "openrouter"
+        gst.openrouter_api_key = args.openrouter_key or get_key_from_env("OPENROUTER_API_KEY")
+        gst.openrouter_base_url = (
+            args.openrouter_base_url or get_key_from_env("OPENROUTER_BASE_URL") or DEFAULT_OPENROUTER_BASE_URL
+        )
+        gst.openrouter_app_title = (
+            args.openrouter_app_title or get_key_from_env("OPENROUTER_APP_TITLE") or "gemini-srt-translator"
+        )
+        gst.openrouter_only_free = bool(getattr(args, "free_only", False))
+        if not gst.openrouter_api_key:
+            error("OpenRouter API key is required. Pass --openrouter-key or set OPENROUTER_API_KEY.")
+            sys.exit(1)
+        return
+
+    gst.provider = "gemini"
     is_enterprise = (
         args.use_enterprise
         or bool(args.cloud_api_key)
@@ -108,7 +155,13 @@ def cmd_translate(args) -> None:
         elif not get_key_from_env("GEMINI_API_KEY"):
             gst.gemini_api_key = get_api_key_from_input()
 
-    gst.gemini_api_key2 = args.api_key2 or get_key_from_env("GEMINI_API_KEY2")
+    gst.gemini_api_key2 = getattr(args, "api_key2", None) or get_key_from_env("GEMINI_API_KEY2")
+
+
+def cmd_translate(args) -> None:
+    """Handle translate command."""
+
+    configure_api(args)
 
     # Validate input file
     if args.input_file:
@@ -207,33 +260,7 @@ def cmd_translate(args) -> None:
 def cmd_list_models(args) -> None:
     """Handle list-models command."""
 
-    is_enterprise = (
-        args.use_enterprise
-        or bool(args.cloud_api_key)
-        or bool(args.cloud_project)
-        or bool(get_key_from_env("GOOGLE_CLOUD_PROJECT"))
-        or bool(get_key_from_env("GOOGLE_API_KEY"))
-        or bool(get_key_from_env("GOOGLE_GENAI_USE_ENTERPRISE"))
-    )
-
-    if is_enterprise:
-        gst.use_enterprise = True
-        if args.request_type:
-            gst.request_type = args.request_type
-        if args.cloud_project or get_key_from_env("GOOGLE_CLOUD_PROJECT"):
-            gst.cloud_project = args.cloud_project or get_key_from_env("GOOGLE_CLOUD_PROJECT")
-            if args.cloud_location or get_key_from_env("GOOGLE_CLOUD_LOCATION"):
-                gst.cloud_location = args.cloud_location or get_key_from_env("GOOGLE_CLOUD_LOCATION")
-        elif args.cloud_api_key or get_key_from_env("GOOGLE_API_KEY"):
-            gst.cloud_api_key = args.cloud_api_key or get_key_from_env("GOOGLE_API_KEY")
-        else:
-            error("Please provide either cloud project or cloud API key for Enterprise.")
-            sys.exit(1)
-    else:
-        if args.api_key:
-            gst.gemini_api_key = args.api_key
-        elif not get_key_from_env("GEMINI_API_KEY"):
-            gst.gemini_api_key = get_api_key_from_input()
+    configure_api(args)
 
     try:
         gst.listmodels()
@@ -269,33 +296,7 @@ def cmd_extract(args) -> None:
 def cmd_transcribe(args) -> None:
     """Handle transcribe command."""
 
-    is_enterprise = (
-        args.use_enterprise
-        or bool(args.cloud_api_key)
-        or bool(args.cloud_project)
-        or bool(get_key_from_env("GOOGLE_CLOUD_PROJECT"))
-        or bool(get_key_from_env("GOOGLE_API_KEY"))
-        or bool(get_key_from_env("GOOGLE_GENAI_USE_ENTERPRISE"))
-    )
-
-    if is_enterprise:
-        gst.use_enterprise = True
-        if args.request_type:
-            gst.request_type = args.request_type
-        if args.cloud_project or get_key_from_env("GOOGLE_CLOUD_PROJECT"):
-            gst.cloud_project = args.cloud_project or get_key_from_env("GOOGLE_CLOUD_PROJECT")
-            if args.cloud_location or get_key_from_env("GOOGLE_CLOUD_LOCATION"):
-                gst.cloud_location = args.cloud_location or get_key_from_env("GOOGLE_CLOUD_LOCATION")
-        elif args.cloud_api_key or get_key_from_env("GOOGLE_API_KEY"):
-            gst.cloud_api_key = args.cloud_api_key or get_key_from_env("GOOGLE_API_KEY")
-        else:
-            error("Please provide either cloud project or cloud API key for Enterprise.")
-            sys.exit(1)
-    else:
-        if args.api_key:
-            gst.gemini_api_key = args.api_key
-        elif not get_key_from_env("GEMINI_API_KEY"):
-            gst.gemini_api_key = get_api_key_from_input()
+    configure_api(args)
 
     if args.video_file:
         if not validate_file_path(args.video_file):
@@ -449,7 +450,8 @@ Examples:
         help="Number of previous subtitle lines to include as context (default: 50, 0 disables)",
     )
     translate_parser.add_argument("-d", "--description", help="Description for translation context")
-    translate_parser.add_argument("-m", "--model", help="Gemini model to use")
+    translate_parser.add_argument("-m", "--model", help="Model to use (Gemini name or OpenRouter model id)")
+    add_openrouter_args(translate_parser)
     translate_parser.add_argument("-b", "--batch-size", type=int, help="Batch size for translation")
     translate_parser.add_argument(
         "--batch-size-error-step", type=int, help="Batch size reduction step per error (default: 100)"
@@ -531,7 +533,8 @@ Examples:
     required_group_transcribe.add_argument("-a", "--audio-file", help="Audio file path for transcription")
     transcribe_parser.add_argument("-k", "--api-key", help="Gemini API key")
     transcribe_parser.add_argument("-o", "--output-file", help="Output file path for transcription results")
-    transcribe_parser.add_argument("-m", "--model", help="Gemini model to use")
+    transcribe_parser.add_argument("-m", "--model", help="Model to use (Gemini name or OpenRouter model id)")
+    add_openrouter_args(transcribe_parser)
     transcribe_parser.add_argument("-d", "--description", help="Description for transcription context")
     transcribe_parser.add_argument("--audio-chunk-size", type=int, help="Audio chunk size for processing in seconds")
     transcribe_parser.add_argument(
@@ -582,8 +585,9 @@ Examples:
     )
 
     # List models command
-    list_parser = subparsers.add_parser("list-models", help="List available Gemini models")
+    list_parser = subparsers.add_parser("list-models", help="List available Gemini or OpenRouter models")
     list_parser.add_argument("-k", "--api-key", help="Gemini API key")
+    add_openrouter_args(list_parser)
     list_parser.add_argument("--skip-upgrade", action="store_true", default=None, help="Skip upgrade check")
     list_parser.add_argument(
         "--use-enterprise", action="store_true", default=None, help="Use Enterprise / Agent Platform mode"

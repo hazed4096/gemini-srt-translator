@@ -116,6 +116,11 @@ class TestModuleListModels(unittest.TestCase):
         gst.cloud_api_key = "cloud-key"
         gst.cloud_project = "my-proj"
         gst.cloud_location = "europe-west1"
+        gst.provider = "gemini"
+        gst.openrouter_api_key = None
+        gst.openrouter_base_url = "https://openrouter.ai/api/v1"
+        gst.openrouter_app_title = "gemini-srt-translator"
+        gst.openrouter_only_free = False
 
         captured = io.StringIO()
         with redirect_stdout(captured):
@@ -123,6 +128,11 @@ class TestModuleListModels(unittest.TestCase):
 
         mock_init.assert_called_once_with(
             gemini_api_key="test-key",
+            provider="gemini",
+            openrouter_api_key=None,
+            openrouter_base_url="https://openrouter.ai/api/v1",
+            openrouter_app_title="gemini-srt-translator",
+            openrouter_only_free=False,
             use_enterprise=True,
             cloud_api_key="cloud-key",
             cloud_project="my-proj",

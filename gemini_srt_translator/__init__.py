@@ -39,6 +39,11 @@ from .utils import upgrade_package
 
 gemini_api_key: str = os.getenv("GEMINI_API_KEY", None)
 gemini_api_key2: str = os.getenv("GEMINI_API_KEY2", None)
+provider: Literal["gemini", "openrouter"] = os.getenv("GST_PROVIDER", "gemini")
+openrouter_api_key: str = os.getenv("OPENROUTER_API_KEY", None)
+openrouter_base_url: str = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+openrouter_app_title: str = os.getenv("OPENROUTER_APP_TITLE", "gemini-srt-translator")
+openrouter_only_free: bool = False
 cloud_api_key: str = os.getenv("GOOGLE_API_KEY", None)
 cloud_project: str = os.getenv("GOOGLE_CLOUD_PROJECT", None)
 cloud_location: str = os.getenv("GOOGLE_CLOUD_LOCATION", None)
@@ -107,7 +112,19 @@ def getmodels():
 
     from .main import GeminiSRTTranslator
 
-    translator = GeminiSRTTranslator(gemini_api_key=gemini_api_key)
+    filtered_params = {
+        k: v
+        for k, v in {
+            "gemini_api_key": gemini_api_key,
+            "provider": provider,
+            "openrouter_api_key": openrouter_api_key,
+            "openrouter_base_url": openrouter_base_url,
+            "openrouter_app_title": openrouter_app_title,
+            "openrouter_only_free": openrouter_only_free,
+        }.items()
+        if v is not None
+    }
+    translator = GeminiSRTTranslator(**filtered_params)
     return translator.getmodels()
 
 
@@ -141,6 +158,11 @@ def listmodels():
 
     translator = GeminiSRTTranslator(
         gemini_api_key=gemini_api_key,
+        provider=provider,
+        openrouter_api_key=openrouter_api_key,
+        openrouter_base_url=openrouter_base_url,
+        openrouter_app_title=openrouter_app_title,
+        openrouter_only_free=openrouter_only_free,
         use_enterprise=use_enterprise,
         cloud_api_key=cloud_api_key,
         cloud_project=cloud_project,
@@ -292,6 +314,11 @@ def translate():
     params = {
         "gemini_api_key": gemini_api_key,
         "gemini_api_key2": gemini_api_key2,
+        "provider": provider,
+        "openrouter_api_key": openrouter_api_key,
+        "openrouter_base_url": openrouter_base_url,
+        "openrouter_app_title": openrouter_app_title,
+        "openrouter_only_free": openrouter_only_free,
         "use_enterprise": use_enterprise,
         "cloud_api_key": cloud_api_key,
         "cloud_project": cloud_project,
@@ -434,6 +461,11 @@ def transcribe():
     params = {
         "gemini_api_key": gemini_api_key,
         "gemini_api_key2": gemini_api_key2,
+        "provider": provider,
+        "openrouter_api_key": openrouter_api_key,
+        "openrouter_base_url": openrouter_base_url,
+        "openrouter_app_title": openrouter_app_title,
+        "openrouter_only_free": openrouter_only_free,
         "use_enterprise": use_enterprise,
         "cloud_api_key": cloud_api_key,
         "cloud_project": cloud_project,

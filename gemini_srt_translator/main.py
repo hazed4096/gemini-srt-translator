@@ -49,6 +49,7 @@ from .helpers import (
     get_translate_instruction,
     get_translate_response_schema,
 )
+from .openrouter import OpenRouterClient, OpenRouterError
 from .session import Subtitle, SubtitleObject, SubtitleSession, TranscriptionSession
 from .utils import convert_timedelta_to_timestamp, convert_timestamp_to_timedelta
 
@@ -62,6 +63,11 @@ class GeminiSRTTranslator:
         self,
         gemini_api_key: str = None,
         gemini_api_key2: str = None,
+        provider: Literal["gemini", "openrouter"] = "gemini",
+        openrouter_api_key: str = None,
+        openrouter_base_url: str = "https://openrouter.ai/api/v1",
+        openrouter_only_free: bool = False,
+        openrouter_app_title: str = "gemini-srt-translator",
         use_enterprise: bool = False,
         cloud_api_key: str = None,
         cloud_project: str = None,
@@ -101,6 +107,17 @@ class GeminiSRTTranslator:
         """
         Initialize the translator with necessary parameters.
         """
+        if provider == "openrouter" and (not model_name or model_name.startswith("gemini")):
+            model_name = "openrouter/free"
+        if provider == "openrouter" and openrouter_only_free and not model_name.endswith(":free"):
+            free_routers = ("openrouter/free", "openrouter/auto", "openrouter/auto-beta")
+            if model_name not in free_routers:
+                raise OpenRouterError(f"--free-only requires a ':free' model or a free router, got: {model_name}")
+        self.provider = provider
+        self.openrouter_api_key = openrouter_api_key
+        self.openrouter_base_url = openrouter_base_url
+        self.openrouter_only_free = openrouter_only_free
+        self.openrouter_app_title = openrouter_app_title
         video_extensions = (".mkv", ".mp4", ".avi", ".mov", ".flv", ".wmv", ".webm", ".m4v", ".ts")
         if input_file and input_file.lower().endswith(video_extensions):
             if not video_file:
@@ -435,12 +452,14 @@ class GeminiSRTTranslator:
             warning(f"Error reading progress file: {e}")
 
     def getmodels(self):
-        """Get available Gemini models that support content generation."""
+        """Get available models that support content generation."""
         client = self._get_client()
         models = client.models.list()
         list_models = []
         for model in models:
-            if self.use_enterprise:
+            if self.provider == "openrouter":
+                list_models.append(model.name)
+            elif self.use_enterprise:
                 list_models.append(model.name.replace("publishers/google/models/", ""))
             else:
                 supported_actions = model.supported_actions
@@ -900,11 +919,18 @@ class GeminiSRTTranslator:
 
     def _get_client(self) -> genai.Client:
         """
-        Configure and return a Gemini client instance.
+        Configure and return a model client instance.
 
         Returns:
             genai.Client: Configured Gemini client instance
         """
+        if self.provider == "openrouter":
+            return OpenRouterClient(
+                api_key=self.openrouter_api_key,
+                base_url=self.openrouter_base_url,
+                only_free=self.openrouter_only_free,
+                app_title=self.openrouter_app_title,
+            )
         if self.use_enterprise:
             if self.cloud_api_key:
                 client = genai.Client(
@@ -950,7 +976,7 @@ class GeminiSRTTranslator:
         Returns:
             int: Token limit for the current model
         """
-        if not self.use_enterprise:
+        if not self.use_enterprise or self.provider == "openrouter":
             client = self._get_client()
             model = client.models.get(model=self.model_name)
             self.token_limit = model.output_token_limit
