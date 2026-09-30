@@ -27,7 +27,7 @@ def _response_text(content):
 def _part_blocks(part):
     text = getattr(part, "text", None)
     if text:
-        return str(text)
+        return {"type": "text", "text": str(text)}
     inline_data = getattr(part, "inline_data", None)
     if inline_data is not None:
         data = getattr(inline_data, "data", None)
@@ -42,7 +42,10 @@ def _part_blocks(part):
                 "format": audio_format,
             },
         }
-    return ""
+    return None
+
+
+ROLE_MAP = {"model": "assistant", "user": "user", "assistant": "assistant", "system": "system"}
 
 
 def _contents_messages(contents, config):
@@ -60,9 +63,17 @@ def _contents_messages(contents, config):
                 blocks.append(block)
         if not blocks:
             continue
-        text = "\n".join(block for block in blocks if isinstance(block, str))
-        message_content = text if text and len(blocks) == 1 else blocks
-        messages.append({"role": getattr(content, "role", "user") or "user", "content": message_content})
+        # A single text part stays a bare string, which is the cheapest form and
+        # keeps text-only requests identical to before. Anything else uses the
+        # array form, where every element must be an object: OpenRouter rejects
+        # mixed text+audio content that carries a bare string ("...content[0]
+        # must be an object"), so text blocks are emitted as typed objects.
+        if len(blocks) == 1 and blocks[0].get("type") == "text":
+            message_content = blocks[0]["text"]
+        else:
+            message_content = blocks
+        role = getattr(content, "role", "user") or "user"
+        messages.append({"role": ROLE_MAP.get(str(role), "user"), "content": message_content})
     return messages
 
 
@@ -145,8 +156,26 @@ class _OpenRouterModels:
         if getattr(config, "top_k", None) is not None:
             body["top_k"] = config.top_k
         payload = self.client._request("POST", "/chat/completions", body)
-        message = (payload.get("choices") or [{}])[0].get("message") or {}
-        return _OpenRouterResponse(_response_text(message.get("content", "")), payload.get("usage") or {})
+        choice = (payload.get("choices") or [{}])[0]
+        message = choice.get("message") or {}
+        text = _response_text(message.get("content", ""))
+        if not text:
+            # Reasoning models can spend the whole budget on reasoning and
+            # return an empty content field; surface that instead of silently
+            # returning nothing.
+            finish_reason = choice.get("finish_reason")
+            reasoning = message.get("reasoning") or ""
+            if finish_reason in ("length", "max_tokens"):
+                raise OpenRouterError(
+                    f"OpenRouter response was cut off (finish_reason={finish_reason}) for model {model}. "
+                    "Try a smaller --batch-size or a model with a larger output limit."
+                )
+            if reasoning:
+                raise OpenRouterError(
+                    f"OpenRouter model {model} returned an empty response and only reasoning output."
+                )
+            raise OpenRouterError(f"OpenRouter model {model} returned an empty response.")
+        return _OpenRouterResponse(text, payload.get("usage") or {})
 
     def generate_content_stream(self, model, contents, config):
         yield self.generate_content(model, contents, config)

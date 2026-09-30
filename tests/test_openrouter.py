@@ -37,9 +37,15 @@ class TestResponseParsing(unittest.TestCase):
             [
                 {"role": "system", "content": "be a translator"},
                 {"role": "user", "content": "first"},
-                {"role": "model", "content": "second"},
+                {"role": "assistant", "content": "second"},
             ],
         )
+
+    def test_gemini_model_role_maps_to_assistant(self):
+        """OpenAI-compatible endpoints reject role='model' with HTTP 400."""
+        contents = [SimpleNamespace(role="model", parts=[SimpleNamespace(text="prior turn")])]
+        messages = _contents_messages(contents, SimpleNamespace(system_instruction=None))
+        self.assertEqual(messages[0]["role"], "assistant")
 
     def test_audio_part_becomes_input_audio_block(self):
         part = SimpleNamespace(
@@ -129,6 +135,41 @@ class TestOpenRouterClient(unittest.TestCase):
             )
         self.assertEqual(len(chunks), 1)
         self.assertEqual(chunks[0].text, "ok")
+
+    def test_empty_content_raises_with_finish_reason(self):
+        client = OpenRouterClient(api_key="key")
+        payload = {
+            "choices": [{"message": {"content": ""}, "finish_reason": "length"}],
+            "usage": {},
+        }
+        with patch.object(client, "_request", return_value=payload):
+            with self.assertRaises(OpenRouterError) as ctx:
+                client.models.generate_content(
+                    model="vendor/model-a:free",
+                    contents=[SimpleNamespace(role="user", parts=[SimpleNamespace(text="hi")])],
+                    config=SimpleNamespace(system_instruction=None, temperature=None, top_p=None, top_k=None),
+                )
+        self.assertIn("batch-size", str(ctx.exception))
+
+    def test_reasoning_only_response_raises(self):
+        client = OpenRouterClient(api_key="key")
+        payload = {
+            "choices": [
+                {
+                    "message": {"content": "", "reasoning": "thinking hard..."},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {},
+        }
+        with patch.object(client, "_request", return_value=payload):
+            with self.assertRaises(OpenRouterError) as ctx:
+                client.models.generate_content(
+                    model="vendor/model-a:free",
+                    contents=[SimpleNamespace(role="user", parts=[SimpleNamespace(text="hi")])],
+                    config=SimpleNamespace(system_instruction=None, temperature=None, top_p=None, top_k=None),
+                )
+        self.assertIn("reasoning", str(ctx.exception))
 
     def test_count_tokens_is_positive(self):
         client = OpenRouterClient(api_key="key")
