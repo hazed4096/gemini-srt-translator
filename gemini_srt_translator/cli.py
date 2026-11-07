@@ -80,11 +80,22 @@ def resolve_token_report_path(args) -> Optional[str]:
 DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 
+def add_joocode_args(parser) -> None:
+    """Add Joocode provider options to a subcommand parser."""
+    parser.add_argument(
+        "--joocode-base-url",
+        help="Joocode base URL (default: http://127.0.0.1:10100/v1)",
+    )
+    parser.add_argument(
+        "--joocode-token",
+        help="Joocode API auth token (falls back to JOOCODE_API_AUTH_TOKEN)",
+    )
+
 def add_openrouter_args(parser) -> None:
     """Add OpenRouter provider options to a subcommand parser."""
     parser.add_argument(
         "--provider",
-        choices=["gemini", "openrouter"],
+        choices=["gemini", "openrouter", "joocode"],
         default="gemini",
         help="Model provider to use (default: gemini)",
     )
@@ -124,6 +135,23 @@ def configure_api(args) -> None:
         if not gst.openrouter_api_key:
             error("OpenRouter API key is required. Pass --openrouter-key or set OPENROUTER_API_KEY.")
             sys.exit(1)
+        return
+
+    if provider == "joocode":
+        gst.provider = "openrouter"
+        gst.openrouter_api_key = (
+            getattr(args, "joocode_token", None)
+            or get_key_from_env("JOOCODE_API_AUTH_TOKEN")
+            or get_key_from_env("JOOCODE_API_KEY")
+            or ""
+        )
+        gst.openrouter_base_url = (
+            getattr(args, "joocode_base_url", None)
+            or get_key_from_env("JOOCODE_BASE_URL")
+            or "http://127.0.0.1:10100/v1"
+        )
+        gst.openrouter_app_title = "gemini-srt-translator"
+        gst.openrouter_only_free = False
         return
 
     gst.provider = "gemini"
@@ -452,6 +480,7 @@ Examples:
     translate_parser.add_argument("-d", "--description", help="Description for translation context")
     translate_parser.add_argument("-m", "--model", help="Model to use (Gemini name or OpenRouter model id)")
     add_openrouter_args(translate_parser)
+    add_joocode_args(translate_parser)
     translate_parser.add_argument("-b", "--batch-size", type=int, help="Batch size for translation")
     translate_parser.add_argument(
         "--batch-size-error-step", type=int, help="Batch size reduction step per error (default: 100)"
@@ -535,6 +564,7 @@ Examples:
     transcribe_parser.add_argument("-o", "--output-file", help="Output file path for transcription results")
     transcribe_parser.add_argument("-m", "--model", help="Model to use (Gemini name or OpenRouter model id)")
     add_openrouter_args(transcribe_parser)
+    add_joocode_args(transcribe_parser)
     transcribe_parser.add_argument("-d", "--description", help="Description for transcription context")
     transcribe_parser.add_argument("--audio-chunk-size", type=int, help="Audio chunk size for processing in seconds")
     transcribe_parser.add_argument(
@@ -588,6 +618,7 @@ Examples:
     list_parser = subparsers.add_parser("list-models", help="List available Gemini or OpenRouter models")
     list_parser.add_argument("-k", "--api-key", help="Gemini API key")
     add_openrouter_args(list_parser)
+    add_joocode_args(list_parser)
     list_parser.add_argument("--skip-upgrade", action="store_true", default=None, help="Skip upgrade check")
     list_parser.add_argument(
         "--use-enterprise", action="store_true", default=None, help="Use Enterprise / Agent Platform mode"

@@ -39,7 +39,7 @@ from .utils import upgrade_package
 
 gemini_api_key: str = os.getenv("GEMINI_API_KEY", None)
 gemini_api_key2: str = os.getenv("GEMINI_API_KEY2", None)
-provider: Literal["gemini", "openrouter"] = os.getenv("GST_PROVIDER", "gemini")
+provider: Literal["gemini", "openrouter", "joocode"] = os.getenv("GST_PROVIDER", "gemini")
 openrouter_api_key: str = os.getenv("OPENROUTER_API_KEY", None)
 openrouter_base_url: str = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 openrouter_app_title: str = os.getenv("OPENROUTER_APP_TITLE", "gemini-srt-translator")

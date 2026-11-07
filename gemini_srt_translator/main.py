@@ -107,8 +107,13 @@ class GeminiSRTTranslator:
         """
         Initialize the translator with necessary parameters.
         """
-        if provider == "openrouter" and (not model_name or model_name.startswith("gemini")):
-            model_name = "openrouter/free"
+        if provider == "joocode":
+            provider = "openrouter"
+            if not openrouter_base_url or openrouter_base_url == "https://openrouter.ai/api/v1":
+                openrouter_base_url = os.getenv("JOOCODE_BASE_URL", "http://127.0.0.1:10100/v1")
+            if not openrouter_api_key:
+                openrouter_api_key = os.getenv("JOOCODE_API_AUTH_TOKEN") or os.getenv("JOOCODE_API_KEY")
+            openrouter_only_free = False
         if provider == "openrouter" and openrouter_only_free and not model_name.endswith(":free"):
             free_routers = ("openrouter/free", "openrouter/auto", "openrouter/auto-beta")
             if model_name not in free_routers:

@@ -184,9 +184,10 @@ class _OpenRouterModels:
 class OpenRouterClient:
     def __init__(self, api_key=None, base_url="https://openrouter.ai/api/v1", only_free=False, app_title="gemini-srt-translator"):
         self.api_key = (api_key or os.getenv("OPENROUTER_API_KEY") or "").strip()
-        if not self.api_key:
+        _base = str(base_url or "https://openrouter.ai/api/v1")
+        if not self.api_key and "openrouter.ai" in _base:
             raise OpenRouterError("OpenRouter API key is missing; set OPENROUTER_API_KEY or pass --openrouter-key")
-        self.base_url = str(base_url or "https://openrouter.ai/api/v1").rstrip("/")
+        self.base_url = _base.rstrip("/")
         self.only_free = bool(only_free)
         self.app_title = app_title
         self.models = _OpenRouterModels(self)
@@ -195,10 +196,11 @@ class OpenRouterClient:
         url = f"{self.base_url}/{path.lstrip('/')}"
         data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
         headers = {
-            "Authorization": f"Bearer {self.api_key}",
             "Accept": "application/json",
             "X-Title": self.app_title,
         }
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
         if data is not None:
             headers["Content-Type"] = "application/json"
         request = urllib.request.Request(url, data=data, headers=headers, method=method)
